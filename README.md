@@ -610,8 +610,8 @@ Game Modules
 ## Phase 2 - SteamCore
 
 -   [ ] Game Loop
--   [ ] Framebuffer
--   [ ] Sprite-System
+-   [x] Framebuffer (240x160, 4-Farben-Palette, Clipping)
+-   [x] Sprite-System (Blitting mit Transparenz und Stride)
 -   [ ] Text Rendering
 -   [ ] Input Abstraction
 -   [ ] Collision System
@@ -619,6 +619,12 @@ Game Modules
 -   [ ] Score System
 -   [ ] Highscore System
 -   [ ] Game State Management
+
+> Framebuffer und Sprite-System sind vollständig host-getestet (kein
+> ESP-IDF nötig, siehe `docs/host-tests.md`) und über einen
+> Dump-Format/PNG-Viewer visuell überprüfbar (`docs/dump-format.md`,
+> `make view`) — noch ohne echtes Display, da das ILI9488 erst
+> verdrahtet werden muss.
 
 ## Phase 3 - Erste Spiele
 
