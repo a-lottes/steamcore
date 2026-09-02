@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Greps the delivered engine tree for violations of constitution §3/§4/§6
-# that would otherwise rely on reviewer diligence: dynamic allocation,
-# ESP-IDF/FreeRTOS/driver headers in logic code, and resolution literals
-# outside the single compile-time constant. Run via `make lint`.
+# Greps the delivered engine tree -- include/, src/, and (for the
+# text-rendering and game-loop rules below, which need to reach specific
+# test/fixture files no include/src scan touches) test/ -- for violations
+# of constitution §3/§4/§6 that would otherwise rely on reviewer
+# diligence: dynamic allocation, ESP-IDF/FreeRTOS/driver headers in logic
+# code, resolution/tile/glyph-metric literals outside their one
+# compile-time constant, and (game-loop) a wall-clock read or unseeded
+# RNG call where the determinism guarantee depends on there being none.
+# Run via `make lint`.
 set -euo pipefail
 
 # Resolve to the repo root regardless of the caller's working directory —
@@ -17,8 +22,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 INCLUDE_DIR="firmware/steamcore/include"
 SRC_DIR="firmware/steamcore/src"
+TEST_DIR="firmware/steamcore/test"
 
-for d in "$INCLUDE_DIR" "$SRC_DIR"; do
+for d in "$INCLUDE_DIR" "$SRC_DIR" "$TEST_DIR"; do
   if [ ! -d "$d" ]; then
     echo "check_constraints: expected directory '$d' (relative to repo root) does not exist -- refusing to report a false OK" >&2
     exit 1
@@ -121,6 +127,47 @@ if awk -v q="'" '
 ' $TEXT_MODULE_FILES; then
   report "a glyph-metric literal (8 or 43) was found outside font.h in the text-rendering module"
 fi
+
+echo "--- no wall-clock read or unseeded RNG in the game-loop mechanism (AC-1.3, AC-4.4) ---"
+# Scope: the mechanism itself plus its test/fixture files -- deliberately
+# NOT bench_game_loop.cpp, which legitimately measures elapsed time with
+# <chrono> the same way bench_dirty_scan.cpp and bench_text.cpp already
+# do. A tick is a caller-driven discrete step (constitution §3 Timing,
+# spec A8): nothing that decides what a game sees may read a clock or an
+# unseeded random source, because that is exactly what would break
+# AC-4.1's byte-identical-replay guarantee.
+GAME_LOOP_DETERMINISM_FILES="$INCLUDE_DIR/steamcore/game_loop.h $TEST_DIR/game_loop_test.cpp $TEST_DIR/game_loop_determinism_test.cpp $TEST_DIR/fb_compare.h $TEST_DIR/fb_compare_test.cpp $TEST_DIR/replay_fixture.h"
+# A missing file in this explicitly-named set is a script bug, not a
+# quiet no-op -- same posture as the directory guard above (review F6:
+# `[ -f "$f" ] || continue` used to skip a renamed/deleted file silently,
+# so `make lint OK` could report a mechanism that was never scanned).
+for f in $GAME_LOOP_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected game-loop file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE '<chrono>|<ctime>|<time\.h>|<sys/time\.h>|std::chrono|steady_clock|system_clock|high_resolution_clock|\bclock[[:space:]]*\(|\bclock_gettime[[:space:]]*\(|\btime[[:space:]]*\(|gettimeofday|\brand[[:space:]]*\(|\bsrand[[:space:]]*\(|random_device|<random>' \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the determinism guarantee (AC-4.1) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the game-loop file set (NFR-2, extends the include/src grep to test/) ---"
+# The include/src allocation check above never reaches test/, so this
+# feature's mechanism-adjacent test and fixture files -- and its bench,
+# which has no reason to allocate either -- get their own pass over the
+# same pattern. Same missing-file posture as the loop above (review F6).
+GAME_LOOP_ALLOC_FILES="$GAME_LOOP_DETERMINISM_FILES $TEST_DIR/bench_game_loop.cpp"
+for f in $GAME_LOOP_ALLOC_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected game-loop file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE '\bnew\b|\b(m|c|re)alloc[[:space:]]*\(|\bstrdup[[:space:]]*\(|std::(vector|string|map|deque|list|function|unique_ptr|make_unique|shared_ptr|make_shared)\b' \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the game-loop file set"
+  fi
+done
 
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather

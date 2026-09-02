@@ -33,11 +33,20 @@ Priority order; the earlier principle wins a tie.
 ## 2. Project Profile & Active Lenses
 
 - **Project type(s):** `library` — SteamCore is an engine consumed by game
-  modules through a fixed contract (`update(GameInput)`, `render()`,
-  `onCollision(Entity&, Entity&)` per README "Game Loop"). It is **not**
-  `website`, `web-app`, `api` or `cli`: the repo has no `package.json`, no HTML,
-  no route handlers and no terminal entrypoint, and the only product output
-  surface is an SPI-attached TFT driven by firmware.
+  modules through a fixed contract: `update(const GameInput&)`, `render(Framebuffer&)`.
+  `render` takes the framebuffer as a parameter rather than the README's
+  originally sketched `render()` — a deliberate, plan-approved deviation
+  (`game-loop` plan §1 Decision 4): binding the `Framebuffer&` once at
+  `GameLoop` construction and passing it into every `render` call makes "the
+  same framebuffer instance every tick" a structural guarantee rather than
+  caller discipline. `onCollision(Entity&, Entity&)`, also per README's
+  original "Game Loop" sketch, is **not yet implemented** — no `Entity` type
+  exists anywhere in the codebase, and "Collision System" remains its own
+  separate, unbuilt item on README's Phase 2 checklist (`game-loop` spec §6
+  Out of Scope). It is **not** `website`, `web-app`, `api` or `cli`: the repo
+  has no `package.json`, no HTML, no route handlers and no terminal
+  entrypoint, and the only product output surface is an SPI-attached TFT
+  driven by firmware.
   *(Confirmed by the user. "Library" here means an internal, statically-linked
   API contract — not a published package.)*
 - **Characteristics:** none active.
@@ -206,3 +215,4 @@ Priority order; the earlier principle wins a tie.
 | 2026-09-01 | §3/§4 sharpened: C++17 fixed; host toolchain (Apple clang 14, `g++`, `make`) recorded as present | Verified this session — host unit tests are a real gate today, not an intention |
 | 2026-09-01 | §3: ILI9488 18-bpp claim marked as an unverified load-bearing assumption; 800×480 panel scaling recorded as an open Phase-4 decision | Both underpin the render architecture but cannot be settled from the repo |
 | 2026-09-01 | §6: persisted data must carry a format version | User accepted; a corrupt-read highscore block is a silent-failure class worth blocking |
+| 2026-09-02 | §2: engine↔game contract corrected — `render()` → `render(Framebuffer&)`; `update(GameInput)` → `update(const GameInput&)`; `onCollision(Entity&, Entity&)` marked not yet implemented | `game-loop` (plan §1 Decision 4, user-approved) shipped `render(Framebuffer&)` so the framebuffer-identity guarantee (AC-2.2) is structural, not caller discipline; the actual `tick()` call is `update(const GameInput&)`, matching the `render` fix's own reasoning rather than leaving the same drift class half-corrected; `game-loop` review F9 flagged §2 as stale against its own "central contract" claim, since `Entity`/`onCollision` remain unbuilt and the constitution implied otherwise |
