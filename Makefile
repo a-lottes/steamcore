@@ -21,6 +21,18 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -I$(INC_DIR)
 FIXTURE_DUMP := firmware/steamcore/test/fixtures/reference_pattern.scfb
 CXXFLAGS += -DSTEAMCORE_FIXTURE_DUMP='"$(FIXTURE_DUMP)"'
 
+# Uncommitted, unlike FIXTURE_DUMP: nothing toolchain-free reads this one
+# (it exists only for `make view`'s human check), so it lives in build/
+# and an artifact that isn't committed cannot go stale -- across `make
+# clean`. Within a single build/ tree it still can: `make view
+# FILTER=...` passes FILTER into the `test` prerequisite too, and a
+# filter that excludes the fixture-writing test leaves whatever
+# text_pattern.scfb a previous run wrote sitting there unchanged, ready
+# to be decoded as if it were current (review F9). `view`'s
+# clean-text-dump prerequisite (below) is what actually closes that gap.
+TEXT_DUMP := $(BUILD_DIR)/text_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_TEXT_DUMP='"$(TEXT_DUMP)"'
+
 ENGINE_SRCS := $(wildcard $(SRC_DIR)/*.cpp)
 TEST_SRCS := $(wildcard $(TEST_DIR)/*_test.cpp)
 HARNESS_SRCS := $(TEST_DIR)/test_harness.cpp $(TEST_DIR)/test_main.cpp
@@ -29,6 +41,7 @@ TEST_BIN := $(BUILD_DIR)/steamcore_tests
 SELFCHECK_BIN := $(BUILD_DIR)/steamcore_selfcheck
 ASAN_BIN := $(BUILD_DIR)/steamcore_tests_asan
 BENCH_BIN := $(BUILD_DIR)/steamcore_bench
+TEXT_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_text
 
 # Every binary target below is itself .PHONY: its recipe runs on EVERY
 # invocation, unconditionally, regardless of any file mtime. This host
@@ -40,7 +53,7 @@ BENCH_BIN := $(BUILD_DIR)/steamcore_bench
 # takes ~1.3s, which is cheap enough that giving up incremental caching
 # entirely is the right trade for a gate that must never report success
 # on code it did not actually just compile.
-.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN)
+.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN)
 
 .PHONY: test
 test: $(TEST_BIN)
@@ -105,24 +118,43 @@ test-gcc:
 	$(MAKE) test CXX=g++
 
 .PHONY: bench
-bench: $(BENCH_BIN)
+bench: $(BENCH_BIN) $(TEXT_BENCH_BIN)
 	$(BENCH_BIN)
+	$(TEXT_BENCH_BIN)
 
 $(BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_dirty_scan.cpp
 
-VIEWER_PNG := $(BUILD_DIR)/pattern.png
+$(TEXT_BENCH_BIN):
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_text.cpp
 
-# US-5: one command from a clean checkout to a viewable PNG of the fixture
-# pattern. Depends on `test` (not just $(TEST_BIN)) because the fixture
-# is committed to git and therefore survives `make clean` -- linking the
+VIEWER_PNG := $(BUILD_DIR)/pattern.png
+TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
+
+# US-5: one command from a clean checkout to viewable PNGs of the
+# rendering-core fixture and the text-rendering fixture. Depends on
+# `test` (not just $(TEST_BIN)) because the rendering-core fixture is
+# committed to git and therefore survives `make clean` -- linking the
 # binary without RUNNING it would silently view last commit's fixture
-# instead of what the current source tree actually draws.
-.PHONY: view
-view: test
+# instead of what the current source tree actually draws; the text dump
+# is written by that same test run (text-rendering plan §1 Decision 7).
+#
+# clean-text-dump runs first (GNU make builds prerequisites left to
+# right without -j, which this project never passes) so a stale
+# text_pattern.scfb from an earlier `make view FILTER=...` run cannot
+# survive into this one: if the `test` prerequisite's own FILTER then
+# skips the fixture-writing test, decoding fails loudly on a missing
+# file instead of silently succeeding on last run's payload (review F9).
+.PHONY: view clean-text-dump
+clean-text-dump:
+	rm -f $(TEXT_DUMP)
+
+view: clean-text-dump test
 	@mkdir -p $(BUILD_DIR)
 	python3 -B tools/fb_view.py $(FIXTURE_DUMP) $(VIEWER_PNG)
+	python3 -B tools/fb_view.py $(TEXT_DUMP) $(TEXT_VIEWER_PNG)
 
 # Independent PNG-validity oracle (plan §1 Decision, risk R1/R2): confirms
 # a decoder that shares no code with fb_view.py's own reader can open the

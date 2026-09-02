@@ -33,8 +33,13 @@ report() {
 }
 
 echo "--- no dynamic allocation or heap-backed container (constitution §3/§6) ---"
+# `//`-line exclusion (same reasoning as the literal checks below): "new"
+# is an ordinary English word ("a new low-level drawing primitive") long
+# before it is ever a C++ keyword, and a doc comment must be free to say
+# it. Code that actually calls `new` is never itself a `//` comment line.
 if grep -rnE '\bnew\b|\b(m|c|re)alloc[[:space:]]*\(|\bstrdup[[:space:]]*\(|std::(vector|string|map|deque|list|function|unique_ptr|make_unique|shared_ptr|make_shared)\b' \
-    "$INCLUDE_DIR" "$SRC_DIR"; then
+    "$INCLUDE_DIR" "$SRC_DIR" \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
   report "dynamic allocation or a forbidden container/string/smart-pointer type was found above"
 fi
 
@@ -67,6 +72,54 @@ if grep -rnE --include='*.h' --include='*.cpp' '\b16\b' \
     | grep -v '/config\.h:' \
     | grep -vE ':[0-9]+:[[:space:]]*//'; then
   report "a tile-size literal (16) was found outside config.h"
+fi
+
+echo "--- no glyph-metric literal (8 or 43) outside font.h (text-rendering, NFR-4) ---"
+# Scope: font.cpp and text.{h,cpp} always; plus any other include/src
+# file that #includes either header (currently none). font.h itself is
+# excluded -- it is where kGlyphWidth/kGlyphHeight/kGlyphAdvance/
+# kGlyphCount are DEFINED, so the literals 8 and 43 belong there and
+# nowhere else, the same "one compile-time constant, everyone else reads
+# it" rule already applied to the screen resolution and the tile size.
+#
+# Two exclusions are needed, not one: the usual `//`-comment lines, AND
+# single-quoted character literals -- font.cpp's glyph table is keyed by
+# `{'8', {...}}` and `{'4', {...}}`-style entries, and stripping only
+# comments would make every digit-named glyph a false positive (review
+# T10 self-check). Row strings never need this: the compile-time art
+# validator (font.cpp) only ever lets them contain ' '/'#'.
+TEXT_MODULE_FILES="$SRC_DIR/font.cpp $INCLUDE_DIR/steamcore/text.h $SRC_DIR/text.cpp"
+for f in $(grep -rlE '#include[[:space:]]*"steamcore/(font|text)\.h"' \
+    "$INCLUDE_DIR" "$SRC_DIR" 2>/dev/null); do
+  case "$f" in
+    */font.h|*/text.h) continue ;;  # the definitions themselves, not consumers
+  esac
+  case " $TEXT_MODULE_FILES " in
+    *" $f "*) ;;
+    *) TEXT_MODULE_FILES="$TEXT_MODULE_FILES $f" ;;
+  esac
+done
+
+# The character-literal strip must remove only the literal itself, never
+# the whole line: dropping the line let a real violation hide behind any
+# character literal that happened to share it -- `char c = '8'; foo(8);`
+# and `int32_t n = 43;  // the 'n' glyphs` both passed this gate clean
+# (review F2). awk, not grep, because the match has to be made against
+# the stripped text while the report still names the file and the
+# original line -- a `grep -n` prefix would itself match `\b8\b`.
+if awk -v q="'" '
+  /^[[:space:]]*\/\// { next }
+  {
+    stripped = $0
+    gsub(q "\\\\?." q, "", stripped)
+    if (stripped ~ /(^|[^0-9A-Za-z_])(8|43)([^0-9A-Za-z_]|$)/) {
+      printf "%s:%d:%s\n", FILENAME, FNR, $0
+      found = 1
+    }
+  }
+  END { exit(found ? 0 : 1) }
+' $TEXT_MODULE_FILES; then
+  report "a glyph-metric literal (8 or 43) was found outside font.h in the text-rendering module"
 fi
 
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
