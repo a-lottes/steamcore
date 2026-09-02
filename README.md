@@ -605,7 +605,8 @@ Game Modules
 -   [ ] Joystick anschließen
 -   [ ] Audio testen
 -   [x] Display auswählen (ILI9488 3.5" SPI, 480x320 quer)
--   [ ] Display ansteuern
+-   [x] Display ansteuern (Spike in `firmware/system/`: 18bpp-Pixelformat
+    am echten Panel verifiziert, siehe `.spark/constitution.md` §3)
 
 ## Phase 2 - SteamCore
 
@@ -623,8 +624,10 @@ Game Modules
 > Framebuffer und Sprite-System sind vollständig host-getestet (kein
 > ESP-IDF nötig, siehe `docs/host-tests.md`) und über einen
 > Dump-Format/PNG-Viewer visuell überprüfbar (`docs/dump-format.md`,
-> `make view`) — noch ohne echtes Display, da das ILI9488 erst
-> verdrahtet werden muss.
+> `make view`). Das ILI9488-Panel ist inzwischen verdrahtet und über
+> einen Hardware-Spike (`firmware/system/`) verifiziert — die beiden
+> sind aber noch nicht verbunden: der echte Display-Treiber (Dirty
+> Tiles, DMA-Push, Framebuffer-Integration) ist noch offen.
 
 ## Phase 3 - Erste Spiele
 
