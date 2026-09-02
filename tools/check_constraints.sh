@@ -128,6 +128,14 @@ if awk -v q="'" '
   report "a glyph-metric literal (8 or 43) was found outside font.h in the text-rendering module"
 fi
 
+# Shared by every feature-scoped determinism-mechanism lint block below
+# (game-loop, game-state, and any future one) so the token lists cannot
+# drift apart between copies -- extending one to close a gap (review
+# F11: the original game-loop list missed `clock_gettime`/`<time.h>`)
+# extends all of them.
+CLOCK_RNG_PATTERN='<chrono>|<ctime>|<time\.h>|<sys/time\.h>|std::chrono|steady_clock|system_clock|high_resolution_clock|\bclock[[:space:]]*\(|\bclock_gettime[[:space:]]*\(|\btime[[:space:]]*\(|gettimeofday|\brand[[:space:]]*\(|\bsrand[[:space:]]*\(|random_device|<random>'
+SCOPED_ALLOC_PATTERN='\bnew\b|\b(m|c|re)alloc[[:space:]]*\(|\bstrdup[[:space:]]*\(|std::(vector|string|map|deque|list|function|unique_ptr|make_unique|shared_ptr|make_shared)\b'
+
 echo "--- no wall-clock read or unseeded RNG in the game-loop mechanism (AC-1.3, AC-4.4) ---"
 # Scope: the mechanism itself plus its test/fixture files -- deliberately
 # NOT bench_game_loop.cpp, which legitimately measures elapsed time with
@@ -146,7 +154,7 @@ for f in $GAME_LOOP_DETERMINISM_FILES; do
     report "expected game-loop file '$f' does not exist -- refusing to skip it silently"
     continue
   fi
-  if grep -nHE '<chrono>|<ctime>|<time\.h>|<sys/time\.h>|std::chrono|steady_clock|system_clock|high_resolution_clock|\bclock[[:space:]]*\(|\bclock_gettime[[:space:]]*\(|\btime[[:space:]]*\(|gettimeofday|\brand[[:space:]]*\(|\bsrand[[:space:]]*\(|random_device|<random>' \
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
       "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
     report "a wall-clock read or unseeded RNG call was found above, in a file the determinism guarantee (AC-4.1) depends on"
   fi
@@ -163,11 +171,62 @@ for f in $GAME_LOOP_ALLOC_FILES; do
     report "expected game-loop file '$f' does not exist -- refusing to skip it silently"
     continue
   fi
-  if grep -nHE '\bnew\b|\b(m|c|re)alloc[[:space:]]*\(|\bstrdup[[:space:]]*\(|std::(vector|string|map|deque|list|function|unique_ptr|make_unique|shared_ptr|make_shared)\b' \
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
       "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
     report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the game-loop file set"
   fi
 done
+
+echo "--- no wall-clock read or unseeded RNG in the game-state mechanism (AC-5.3) ---"
+# Same reasoning as the game-loop block above, same shared pattern: a
+# GameSession transition must be a pure function of its own prior state
+# and the step's input, or the replay determinism proof (AC-5.1) means
+# nothing.
+GAME_STATE_DETERMINISM_FILES="$INCLUDE_DIR/steamcore/game_state.h $SRC_DIR/game_state.cpp $TEST_DIR/game_state_test.cpp $TEST_DIR/game_state_determinism_test.cpp $TEST_DIR/session_replay_fixture.h"
+for f in $GAME_STATE_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected game-state file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the determinism guarantee (AC-5.1) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the game-state test file set (NFR-2, extends the include/src grep to test/) ---"
+# game_state.h/.cpp already live in include/+src/, so the general
+# allocation check above already reaches them; this loop covers only
+# the test/ files it does not reach. Same missing-file posture as above.
+GAME_STATE_TEST_FILES="$TEST_DIR/game_state_test.cpp $TEST_DIR/game_state_determinism_test.cpp $TEST_DIR/session_replay_fixture.h"
+for f in $GAME_STATE_TEST_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected game-state file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the game-state test file set"
+  fi
+done
+
+echo "--- no integer standing in for a GameState (NFR-4) ---"
+# GameState's whole point is that a state is named, never a number. An
+# enumerator given an explicit value, or a static_cast into/out of the
+# enum, would let a digit stand in for a state again, defeating the
+# -Wswitch exhaustiveness check the type otherwise gets for free (T2).
+if [ ! -f "$INCLUDE_DIR/steamcore/game_state.h" ]; then
+  report "expected game-state file '$INCLUDE_DIR/steamcore/game_state.h' does not exist -- refusing to skip it silently"
+else
+  if grep -nHE '\b(READY|PLAYING|GAME_OVER)[[:space:]]*=[[:space:]]*[0-9]' \
+      "$INCLUDE_DIR/steamcore/game_state.h" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a GameState enumerator was given an explicit value above -- states are named, never numbered"
+  fi
+  if grep -nHE 'static_cast<[[:space:]]*GameState[[:space:]]*>' \
+      "$INCLUDE_DIR/steamcore/game_state.h" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a static_cast<GameState> was found above -- a state is reached only through GameSession::advance"
+  fi
+fi
 
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather
