@@ -87,14 +87,25 @@ Priority order; the earlier principle wins a tie.
 - **Framebuffer:** 1 byte per pixel over a 4-colour palette (`BLACK`,
   `DARK_ORANGE`, `ORANGE`, `BRIGHT_ORANGE`) = 38,400 bytes, plus an equally
   sized comparison buffer for dirty tracking.
-- **Display path:** ILI9488 3.5" SPI TFT. Over SPI this controller cannot take
-  RGB565 — only 18 bpp / 3 bytes per pixel. A full frame is 480×320×3 =
-  460,800 bytes; at 40 MHz that is ~92 ms ≈ 10.9 fps before overhead.
-  Therefore: **dirty 16×16 tiles pushed by SPI DMA; never a full-frame push.**
-  - **Load-bearing assumption, not yet verified.** The whole tile pipeline rests
-    on the 18-bpp-only claim, which cannot be checked from this repo. The panel
-    arrives 2026-09-02; confirming the pixel format against the real hardware is
-    the **first** thing done with it, before anything is built on top.
+- **Display path:** ILI9488 3.5" SPI TFT (exact module: **KMRTM35018-SPI**,
+  320×480 native GRAM, 3.3V-only — 5V would damage it — confirmed via that
+  module's own datasheet, not the generic "40-pin FPC" description some other
+  listings show; a simple ~9-pin header on this board, no touch controller,
+  no SD card slot). Over SPI this controller cannot take RGB565 — only 18 bpp
+  / 3 bytes per pixel. A full frame is 480×320×3 = 460,800 bytes; at 40 MHz
+  that is ~92 ms ≈ 10.9 fps before overhead. Therefore: **dirty 16×16 tiles
+  pushed by SPI DMA; never a full-frame push.**
+  - **Verified 2026-09-02 by a spike, not by the real driver.** A minimal
+    ESP-IDF bring-up firmware (`firmware/system/`, an ESP-IDF project
+    separate from `firmware/steamcore/`; outside the SPARK loop, not a
+    `/story-time` feature) set COLMOD=0x66 (18bpp) over SPI and filled the
+    real panel with solid Red, Green, Blue, then White; all four rendered as
+    exactly those colors, filling the entire screen evenly, with no
+    streaking, tearing or channel swap. The 18-bpp-only claim is now a
+    **confirmed fact**, not an assumption. This was a write-only bring-up
+    test only — no dirty tiles, no DMA, no `Framebuffer` integration — so the
+    real driver the tile pipeline depends on is still unbuilt, planned
+    future work.
 - **Open (Phase 4):** the final 7–8" panel is ~800×480. 240×160 scales integer
   to 480×320 (×2) or 720×480 (×3, letterboxed) — neither fills 800×480. Whether
   that panel gets ×3 with letterboxing or its own virtual resolution is
@@ -109,20 +120,44 @@ Priority order; the earlier principle wins a tie.
   central registry**, and the system menu lists exactly what the registry holds.
   No runtime module loading. The registration *mechanism* is an architecture
   decision for `/sprint-plan`, not a constitutional one.
-- **Pin assignment:** every GPIO number lives in one central `board_config.h`.
-  No GPIO literal anywhere else. The current values are **placeholders** — the
-  display hardware arrives 2026-09-02 and nothing is wired yet.
+- **Pin assignment:** every GPIO number lives in one central `board_config.h`
+  (`firmware/steamcore/include/steamcore/board_config.h`). No GPIO literal
+  anywhere else. **Wired and fixed 2026-09-02**, not a placeholder: CS=GPIO10,
+  RESET=GPIO9, DC/RS=GPIO14, SDI/MOSI=GPIO11, SCK=GPIO12, SDO/MISO=GPIO13
+  (wired but unused so far). Chosen to land on the ESP32-S3's SPI2_HOST IOMUX
+  pins and to avoid GPIO26–37 (reserved for octal PSRAM/flash on this chip
+  variant) and the boot-strapping pins 0, 3, 45, 46. The backlight (LED pin)
+  is wired **directly to the board's 3V3 rail, not a GPIO** — the panel
+  datasheet gives a backlight *voltage* range (3.0–3.6V) rather than an LED
+  current/forward-voltage spec, implying an onboard current-limiting resistor
+  already sized for 3.3V, so no external resistor or GPIO control was needed.
+  `board_config.h` therefore has no backlight constant; PWM dimming would
+  need re-wiring later if ever wanted.
 - **Off-limits:** the XPT2046 touch controller on the panel is deliberately
   unused; no network/online code; no RGB or full-colour rendering path; no
   desktop simulator.
 
 ## 4. Quality Bars (Definition of Done defaults)
 
-- **Toolchain reality (as of 2026-09-01):** a **host C++ toolchain is present**
+- **Toolchain reality (as of 2026-09-02):** a **host C++ toolchain is present**
   — Apple clang 14.0.3 (`/usr/bin/clang++`), `/usr/bin/g++`, `/usr/bin/make`,
-  Xcode Command Line Tools. **Absent:** ESP-IDF, cmake, ninja; no display is
-  wired. So: host-compiled code runs today; the firmware cannot be built,
-  flashed or run on hardware. Amend this section the day that changes.
+  Xcode Command Line Tools. **ESP-IDF v5.4.4 is now installed**
+  (`~/esp/esp-idf`, target `esp32s3`; toolchain, cmake and ninja all present).
+  A minimal bring-up firmware target (`firmware/system/` — an ESP-IDF project
+  distinct from the host-testable `firmware/steamcore/`) was built, flashed
+  to the real board, and run: logging over the native USB-Serial/JTAG port
+  and confirmed visually (§3). So: **host-compiled code runs today, and the
+  firmware can now be built, flashed and run on hardware.** Keep this honest
+  about scope — that was a spike/bring-up test (no dirty tiles, no DMA, no
+  `Framebuffer` integration), not the production display driver, which
+  remains future planned work.
+  - **Hardware quirk worth recording, so it isn't re-discovered from
+    scratch:** on this board, the native USB-Serial/JTAG port's software
+    auto-reset-to-run (RTS/DTR) reliably lands the chip in ROM download mode,
+    not the app, after a flash. A **manual physical RESET button press** is
+    required after every `idf.py flash` to actually boot into the app.
+    `idf.py flash` itself works fine; only getting the app to run afterward
+    needs the button.
 - **Host unit tests are a real gate, today.** Hardware-independent logic
   (timing, collision, sprite blitting into a framebuffer, the registry,
   scoring) is covered by unit tests compiled and run with `clang++`/`make` — no
@@ -216,3 +251,4 @@ Priority order; the earlier principle wins a tie.
 | 2026-09-01 | §3: ILI9488 18-bpp claim marked as an unverified load-bearing assumption; 800×480 panel scaling recorded as an open Phase-4 decision | Both underpin the render architecture but cannot be settled from the repo |
 | 2026-09-01 | §6: persisted data must carry a format version | User accepted; a corrupt-read highscore block is a silent-failure class worth blocking |
 | 2026-09-02 | §2: engine↔game contract corrected — `render()` → `render(Framebuffer&)`; `update(GameInput)` → `update(const GameInput&)`; `onCollision(Entity&, Entity&)` marked not yet implemented | `game-loop` (plan §1 Decision 4, user-approved) shipped `render(Framebuffer&)` so the framebuffer-identity guarantee (AC-2.2) is structural, not caller discipline; the actual `tick()` call is `update(const GameInput&)`, matching the `render` fix's own reasoning rather than leaving the same drift class half-corrected; `game-loop` review F9 flagged §2 as stale against its own "central contract" claim, since `Entity`/`onCollision` remain unbuilt and the constitution implied otherwise |
+| 2026-09-02 | §3: ILI9488 18-bpp-only claim moved from unverified assumption to **confirmed fact**, and exact module identified as KMRTM35018-SPI; §3 pin assignment moved from placeholder to **wired, fixed** values in `board_config.h` (CS=10, RESET=9, DC=14, MOSI=11, SCK=12, MISO=13; backlight direct to 3V3, no GPIO); §4 toolchain reality updated — ESP-IDF v5.4.4 now installed, a bring-up firmware target built/flashed/run on the real board; physical-reset-button-after-flash quirk recorded | A hardware bring-up spike (`firmware/system/`, outside the SPARK loop, not a `/story-time` feature) today flashed a minimal ESP-IDF test firmware to the real board and physically verified the pixel format and wiring these constitutional passages previously only asserted or left as placeholder |
