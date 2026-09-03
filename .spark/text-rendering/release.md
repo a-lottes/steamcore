@@ -5,22 +5,21 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 2), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.0.3 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.0.3 |
 | **Date** | 2026-09-03 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, pre-flight re-verified fresh on the current
-  worktree, release commit and annotated tag drafted below but **not executed** — this run
-  is prepare-only, no outward-facing (or local-commit) action taken, per explicit
-  instruction. Awaiting the caller's go before any command in §3 runs.
+- **Status:** `released` — both gates green, pre-flight re-verified fresh twice (once before
+  the commit, once again as the post-release smoke check on the resulting HEAD), release
+  commit and annotated tag executed per explicit user go-ahead relayed in this conversation.
 - **Summary:** Retroactive catch-up release for the 8×8 bitmap font and `drawText`. The
   source shipped weeks ago as commit `6b88467`; only `.spark/text-rendering/qa.md` and this
   release report are new at commit time. No source changes. Third of four queued
   retroactive catch-ups (`rendering-core` = `v0.0.1`, done; `framebuffer-viewer` = `v0.0.2`,
-  done; this = `v0.0.3`, prepared; `game-loop` queued behind as `v0.0.4`).
-- **Open:** `1 outstanding` — publish (release commit + annotated tag) awaiting explicit
-  user go-ahead; owner is whoever relays that authorization back to `/go-live`.
+  done; this = `v0.0.3`, done; `game-loop` queued behind as `v0.0.4`).
+- **Open:** none — release executed, tag verified to point at `6b88467`, post-release smoke
+  check green.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the final ruling.
 - **On conflict:** the numbered body below wins for everything except `Status`/`Version`;
   log the mismatch at the next `/go-live` and proceed.
@@ -36,8 +35,7 @@
   waiver. 0 bugs found.
 - `.spark/constitution.md` §7 Delivery & Handoff: **`direct`** mode, explicitly declared
   (release mode `direct`, approver `n/a`, target branch `main`, ticket format `none`,
-  terminal status `released`). No PR/handoff step; terminal status will be `released` once
-  §3 executes.
+  terminal status `released`). No PR/handoff step; terminal status is `released`.
 
 ## 1. Pre-Flight Checks
 
@@ -81,38 +79,25 @@
 
 ## 3. Release Actions
 
-*`direct` mode: local commit + local annotated tag are the entire "publish" step. **Not
-executed** this run — prepared only, pending explicit user go-ahead.*
+*`direct` mode: local commit + local annotated tag are the entire "publish" step. Executed
+this run per explicit user go-ahead relayed in this conversation ("ok" in direct response to
+the prepared §3/§4 commands).*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Prepared, not executed.** `v0.0.3` — next in the retroactive-catch-up sequence established by `rendering-core`/`framebuffer-viewer` (CLAUDE.md). Confirmed via `git log --oneline` that `6b88467` sits immediately after `5886318` (`v0.0.2`) and immediately before `91e2641` (queued as `v0.0.4`, game-loop) in the original chronology. Annotated tag would be created on `6b88467` itself (the historical source commit), never on the catch-up commit. |
-| Release commit | **Prepared, not executed.** Would add only `.spark/text-rendering/qa.md` and `.spark/text-rendering/release.md`, staged individually via two explicit `git add <path>` calls — never `-A`/`.`. |
+| Version bump & tag | **Executed.** `v0.0.3` — next in the retroactive-catch-up sequence established by `rendering-core`/`framebuffer-viewer` (CLAUDE.md). Annotated tag `v0.0.3` created on `6b88467` itself (the historical source commit, never the catch-up commit). Verified: `git rev-list -n1 v0.0.3` → `6b88467846ab88b3f752b0bf280585af476bd846`, exactly matching `git rev-parse 6b88467`. |
+| Release commit | **Executed.** Commit `3bb26803c8592998992e29407ab1bba6596ef30e` ("Add QA verification and release notes for text-rendering") adds only `.spark/text-rendering/qa.md` and `.spark/text-rendering/release.md`, staged individually via two explicit `git add <path>` calls — confirmed via `git status` before and after that no other file was included. |
 | PR / merge | N/A — `direct` mode, no remote configured |
 | Deploy | N/A — no build/flash/deploy pipeline exists for this host-tested logic increment |
-| Post-release smoke check | Pending — to be run on the resulting HEAD after the commit above, before status moves to `released` |
-
-**Commands prepared, pending explicit go:**
-```
-git add .spark/text-rendering/qa.md
-git add .spark/text-rendering/release.md
-git commit -m "Add QA verification and release notes for text-rendering
-
-Retroactive catch-up: source already shipped as 6b88467. This commit adds
-only qa.md and release.md, per the pattern established by rendering-core
-and framebuffer-viewer."
-git tag -a v0.0.3 6b88467 -m "v0.0.3: text rendering (8x8 bitmap font, drawText) — retroactive QA/release catch-up"
-```
+| Post-release smoke check | **Green.** `make clean && make test-all` re-run on the resulting HEAD (`3bb2680`): 109/109 tests passed (clang -O2, ASan+UBSan, g++ alias); test-negative OK; benches OK (dirty scan 0.0031 ms, text 0.1458 ms, game-loop 0.0015 ms, all under the 5 ms budget); 15 Python tests + 2 roundtrip OK; test-png-external OK (240×160); make lint OK (11 rule blocks). No deploy pipeline exists, so "alive" here means: the release commit's exact test suite passes on the tagged history — nothing further to probe. |
 
 **Rollback path** (local-only, nothing pushed, nothing to unwind remotely):
-- Nothing has been committed yet — if the go is withdrawn, no action is needed; the working
-  tree already reflects the pre-release state except the untracked `qa.md`/`release.md`.
-- Once executed: tag wrong → `git tag -d v0.0.3` — removes the local tag only; `6b88467` is
-  untouched (old, shipped, load-bearing history — never reset or rewritten).
-- Once executed: release commit needs undoing → `git reset --soft HEAD~1` — restores both
-  files to staged/modified in the working tree; nothing lost, no force-push, no
-  coordination needed (nothing would ever have been pushed).
-- The prepared commit touches only the two named `.spark/text-rendering/` files, so undoing
+- Tag wrong → `git tag -d v0.0.3` — removes the local tag only; `6b88467` is untouched (old,
+  shipped, load-bearing history — never reset or rewritten).
+- Release commit needs undoing → `git reset --soft HEAD~1` — restores both files to
+  staged/modified in the working tree; nothing lost, no force-push, no coordination needed
+  (nothing was ever pushed; `main` has no remote configured).
+- The executed commit touches only the two named `.spark/text-rendering/` files, so undoing
   it cannot affect `6b88467`'s source or the one remaining backlog feature (`game-loop`).
 
 ## 4. Learnings (Keep!)
@@ -139,8 +124,9 @@ git tag -a v0.0.3 6b88467 -m "v0.0.3: text rendering (8x8 bitmap font, drawText)
 
 - [x] All pre-flight checks passed at release time
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified — **prepared, not executed**; awaiting
-      explicit user go-ahead for the commit + tag commands in §3
+- [x] Release actions executed and verified — release commit `3bb2680` and annotated tag
+      `v0.0.3` (pointing at `6b88467`) both created and verified; post-release smoke check
+      green
 - [x] Learnings recorded
 - [x] Line budget respected: Ist 100 / Soll ~100 (excluding HTML comments)
-- [ ] Status set to `released` — currently `preparing`, pending the go
+- [x] Status set to `released`
