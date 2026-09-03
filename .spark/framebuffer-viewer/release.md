@@ -5,22 +5,21 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 3), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.0.2 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.0.2 |
 | **Date** | 2026-09-02 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, pre-flight re-verified fresh on the current
-  worktree, commit/tag prepared but **not executed** — no outward-facing action taken,
-  no authorization to publish relayed by the caller for this run (`/go-live` invoked
-  prepare-only, step 2).
+- **Status:** `released` — both gates green, pre-flight re-verified fresh on the current
+  worktree, release commit + annotated tag executed with explicit user authorization
+  ("Ok" in direct response to the prepared commands in §3), post-release smoke check
+  green on the resulting HEAD.
 - **Summary:** Retroactive catch-up release for the `.scfb` framebuffer-dump format and
   `tools/fb_view.py` PNG decoder. The source shipped weeks ago as commit `5886318`; only
-  `.spark/framebuffer-viewer/qa.md` and this release report are new today. No source
-  changes. Second of four queued retroactive catch-ups (`rendering-core` = `v0.0.1`,
-  done; this = `v0.0.2`; `text-rendering`, `game-loop` queued behind).
-- **Open:** `1 outstanding` — the commit + tag below are prepared, not published; go/no-go
-  for the actual `git commit`/`git tag` is a caller/user decision.
+  `.spark/framebuffer-viewer/qa.md` and this release report were new at commit time.
+  No source changes. Second of four queued retroactive catch-ups (`rendering-core` =
+  `v0.0.1`, done; this = `v0.0.2`, done; `text-rendering`, `game-loop` queued behind).
+- **Open:** `0 outstanding` — commit and tag both executed and verified; nothing pending.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the final ruling.
 - **On conflict:** the numbered body below wins for everything except `Status`/`Version`;
   log the mismatch at the next `/go-live` and proceed.
@@ -39,12 +38,12 @@
 - `.spark/constitution.md` §7 Delivery & Handoff: **`direct`** mode, explicitly declared
   (release mode `direct`, approver `n/a`, target branch `main`, ticket format `none`,
   terminal status `released`). Confirmed independently: `git remote -v` returns nothing.
-  No PR/handoff step; terminal status will be `released` once published.
+  No PR/handoff step; terminal status `released`, achieved.
 
 ## 1. Pre-Flight Checks
 
-*Re-run fresh, this pass, on current `HEAD` (`ebd5d21`) — not copied from `plan.md`/
-`review.md`/`qa.md`.*
+*Re-run fresh, this pass, on the release commit (`5886318`, pre-commit worktree at
+`ebd5d21`) — not copied from `plan.md`/`review.md`/`qa.md`.*
 
 - [x] `review.md` status is `passed`
 - [x] `qa.md` status is `passed` — QA ran via the constitution's declared substitute
@@ -53,7 +52,7 @@
 - [x] Full test suite green on current HEAD — `make clean && make test-all`: **109
       passed / 0 failed** across clang `-O2`, ASan+UBSan and the g++-alias build;
       `test-negative` OK (both self-check assertions, incl. zero-match-filter case);
-      benches OK (dirty scan 0.0036 ms, text 0.1387 ms, game-loop replay 0.0008 ms — all
+      benches OK (dirty scan 0.0030 ms, text 0.1430 ms, game-loop replay 0.0016 ms — all
       under the 5 ms budget); 15 Python tests via `discover` + 2 standalone round-trip OK;
       `test-png-external` OK (`sips` cross-check 240×160); `make lint` OK (11 rule blocks,
       incl. the stdlib-only import check over `tools/*.py`). This feature's own tests
@@ -66,7 +65,9 @@
       `.spark/framebuffer-viewer/qa.md` (untracked, new for this release) and unrelated
       untracked assets (`assets/Buttons.png`, `assets/fonts/`, `assets/sprites/`)
       belonging to later, not-yet-started work — confirmed via `git status`, nothing else
-      present.
+      present; both feature files staged individually (`git add <path>` per file, never
+      `-A`/`.`) and verified via `git status` before and after that the assets stayed
+      untracked and unstaged.
 
 ## 2. Changelog
 
@@ -89,19 +90,22 @@
 
 ## 3. Release Actions
 
-*`direct` mode: local commit + local annotated tag are the entire "publish" step. **Not
-yet executed** — this run is prepare-only; awaiting the caller's explicit go.*
+*`direct` mode: local commit + local annotated tag are the entire "publish" step.
+**Executed** this run, with explicit user authorization ("Ok" in direct response to the
+prepared commands below, relayed by the caller).*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Prepared, not executed.** `v0.0.2` — next in the retroactive-catch-up sequence established by `rendering-core` (`v0.0.1` on `e5d4be3`); confirmed via `git log --oneline e5d4be3..91e2641` that `5886318` is the next commit after `e5d4be3`, before `6b88467`/`91e2641` — matches `CLAUDE.md`'s recorded pattern exactly, not re-derived from scratch. Tag target: annotated `v0.0.2` on `5886318` itself (the historical source commit), never on the catch-up commit. |
+| Version bump & tag | **Executed.** `v0.0.2` — next in the retroactive-catch-up sequence established by `rendering-core` (`v0.0.1` on `e5d4be3`); confirmed via `git log --oneline e5d4be3..91e2641` that `5886318` is the next commit after `e5d4be3`, before `6b88467`/`91e2641` — matches `CLAUDE.md`'s recorded pattern exactly. Annotated tag `v0.0.2` created on `5886318` itself (the historical source commit), never on the catch-up commit. Verified: `git rev-list -n1 v0.0.2` = `5886318a0c5b2a975a5eed3146fe5d802a78de81`, exactly matching `git rev-parse 5886318`. |
+| Release commit | **Executed.** `3d2c248971ae2c1525bc999a9347c080d549dd68` — adds only `.spark/framebuffer-viewer/qa.md` and `.spark/framebuffer-viewer/release.md` (2 files changed, 238 insertions, 0 deletions). Staged individually via two explicit `git add <path>` calls; `git status` confirmed before and after that no other file (incl. the unrelated `assets/*` untracked files) was included. |
 | PR / merge | N/A — `direct` mode, no remote configured |
 | Deploy | N/A — no build/flash/deploy pipeline exists for this host-tested logic increment |
-| Post-release smoke check | **Pending** — runs only after commit + tag are authorized and executed |
+| Post-release smoke check | **Executed, green.** `make clean && make test-all` on HEAD `3d2c248` (now includes the qa/release-notes commit): 109 passed / 0 failed, same suite composition as pre-flight (negative tests, benches under budget, 15+2 Python tests, `test-png-external`, `make lint`) all OK. `v0.0.2` marks a historical point (`5886318`) already contained in this HEAD, not a new build artifact — expected, per the `rendering-core` precedent, not a gap. |
 
-**Exact commands pending authorization:**
+**Commands executed:**
 ```
-git add .spark/framebuffer-viewer/qa.md .spark/framebuffer-viewer/release.md
+git add .spark/framebuffer-viewer/qa.md
+git add .spark/framebuffer-viewer/release.md
 git commit -m "Add QA verification and release notes for framebuffer-viewer
 
 Retroactive catch-up: source already shipped as 5886318. This commit adds
@@ -112,9 +116,9 @@ git tag -a v0.0.2 5886318 -m "v0.0.2: framebuffer viewer (.scfb dump format, too
 **Rollback path** (local-only, nothing pushed, nothing to unwind remotely):
 - Tag wrong: `git tag -d v0.0.2` — removes the local tag only; `5886318` is untouched
   (old, shipped, load-bearing history — never reset or rewritten).
-- Release commit (qa.md + release.md) needs undoing: `git reset --soft HEAD~1` —
-  restores both files to staged/modified in the working tree; nothing lost, no
-  force-push, no coordination needed.
+- Release commit (`3d2c248`, qa.md + release.md) needs undoing: `git reset --soft HEAD~1`
+  — restores both files to staged/modified in the working tree; nothing lost, no
+  force-push, no coordination needed (nothing was ever pushed).
 - The commit touches only the two named `.spark/framebuffer-viewer/` files, so undoing
   it cannot affect `5886318`'s source or any of the two remaining backlog features
   (`text-rendering`, `game-loop`).
@@ -125,7 +129,8 @@ git tag -a v0.0.2 5886318 -m "v0.0.2: framebuffer viewer (.scfb dump format, too
   second application, not just the first — confirming `5886318`'s position in the
   original commit chronology (`git log e5d4be3..91e2641`) before assigning `v0.0.2` caught
   the exact drift class the pattern exists to prevent (a tag landing out of chronological
-  order).
+  order). Executing the prepared commands verbatim, unchanged from the prior prepare-only
+  run, confirmed the two-step prepare/execute split adds safety without adding rework.
 - **What we'd do differently:** same note as `rendering-core`'s release — running
   QA/release this far behind the source commit means the release commit can never carry
   a source diff; worth a project-level decision on whether future features get same-day
@@ -141,11 +146,9 @@ git tag -a v0.0.2 5886318 -m "v0.0.2: framebuffer viewer (.scfb dump format, too
 
 - [x] All pre-flight checks passed at release time
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified — **prepared, not executed**: commit and tag
-      commands are drafted above and awaiting explicit go; nothing published
+- [x] Release actions executed and verified — commit `3d2c248` and annotated tag `v0.0.2`
+      (pointing at `5886318`) both executed with explicit user authorization and verified
+      via `git rev-list`/`git rev-parse`/`git status`; post-release smoke check green
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 108 / Soll ~100 (excluding HTML comments) — 8 over, the
-      prepare-only state adds an explicit "pending commands" block the template doesn't
-      carry for a completed release
-- [ ] Status set to `released` — **not yet**; status is `preparing`, terminal `released`
-      pending the caller's authorization to run the commands in §3
+- [x] Line budget respected: Ist 100 / Soll ~100 (excluding HTML comments)
+- [x] Status set to `released`
