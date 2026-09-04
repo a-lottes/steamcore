@@ -26,3 +26,26 @@ only run later, catching up a backlog. When releasing one of these:
   the full loop same-day (`game-state-management`). Retroactive catch-ups for
   older, pre-existing commits use `v0.0.1`, `v0.0.2`, ... in their original
   commit order, staying below `v0.1.0` rather than continuing past it.
+
+## Re-check `git status` before staging a prepared release
+
+A `/go-live` prepare-only pass writes its exact file list into
+`release.md` §3 while the increment's work is still fresh in context — but
+execution can happen turns later, after other files in the working tree
+have changed (a concurrent effort, a stray edit, a file the increment
+itself touched without the preparer noticing). Trusting that prepared list
+verbatim at execution time is how a genuinely-modified file gets silently
+left out of the release commit.
+
+Example: `display-driver`'s (`v0.2.0`) prepared plan omitted
+`tools/check_constraints.sh`, even though T9 had added 5 new lint rules to
+it — the file simply wasn't in the preparer's list. Caught only because the
+orchestrator ran a fresh `git status` before staging and diffed it against
+the prepared list, not because the plan itself flagged the gap.
+
+**Rule:** immediately before running the staging commands from a
+`release.md`, re-run `git status` and reconcile it against §3's file list —
+every modified/untracked path that belongs to the feature should appear in
+the list, and every path in the list should still exist and still be
+relevant. Add what's missing before committing; never assume the prepared
+list from an earlier turn is still complete.
