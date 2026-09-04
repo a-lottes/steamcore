@@ -1,9 +1,16 @@
 # Device Build
 
-The display driver's SPI half (`firmware/steamcore/port/esp32/`) cannot run
-on the host — see constitution §4 and display-driver plan.md §1 Decision 1.
-This is how to build, flash and watch it on the real ESP32-S3-N16R8 board.
-`docs/host-tests.md` covers everything that *can* run without the board.
+`firmware/steamcore/port/esp32/` cannot run on the host — see constitution
+§4 and display-driver plan.md §1 Decision 1. This is how to build, flash
+and watch it on the real ESP32-S3-N16R8 board. `docs/host-tests.md` covers
+everything that *can* run without the board.
+
+`firmware/system/main/app_main.cpp` currently runs the **input-driver**
+harness (`InputReader<GpioInputSource>` + a real `GameSession`, log-only —
+plan.md T9): flashing this build no longer runs the display-driver harness
+that produced v0.2.0's release evidence — that harness is throwaway by
+construction and its source is preserved verbatim in git history at the
+v0.2.0 tag (input-driver plan.md §5, accepted deliberately).
 
 ## Prerequisites
 
@@ -90,3 +97,34 @@ Per display-driver plan.md §4, exactly:
   AC-4.4, AC-5.1, NFR-1's actual measurement, NFR-9's actual log output.
   `make test` cannot and must not pretend to cover these — nothing is
   reported as passed until a transcript exists.
+
+`input-driver` splits the same way (plan.md §1 Decision 7, T9/T10):
+
+- **Host-CI-verifiable**: AC-1.1–1.4 (per-signal independence, level-not-
+  edge, cold start, simultaneous directions), AC-2.1–2.4 (bounce immunity,
+  `GameSession` composition, zero-ESP-IDF build), AC-3.1 (pin table's
+  no-bare-literal correctness, linted) — see `docs/host-tests.md`.
+- **Document-verifiable, not host-CI-verifiable** (no test or lint rule
+  reads it — a human or QA confirms by reading `docs/wiring-input.md`
+  directly, review F6): AC-3.2 (per-signal topology, four independent
+  switches stated), AC-3.3 ("nothing wired yet" stated).
+- **Structurally verifiable without hardware** (T9, this document's `idf.py
+  build` step above, no human and no wiring needed): AC-4.5 — read
+  `firmware/steamcore/port/esp32/gpio_input_source.{h,cpp}` and
+  `firmware/system/main/app_main.cpp`/`input_harness_game.h` to confirm
+  `GameSession`'s and `GameLoop`'s shipped public APIs are used unmodified.
+- **Needs the physical board, and does not exist yet** (`docs/wiring-input.md`
+  states nothing is wired — plan.md T10, reported `blocked` until it is):
+  AC-4.1, AC-4.2, AC-4.3, AC-4.4 — a human pressing real buttons/joystick
+  while reading the serial log this harness produces.
+  - **Reading AC-4.3's transition count off the log:** the harness also
+    logs a synthetic `PLAYING -> GAME_OVER` on its own timer (every 150
+    ticks — `input_harness_game.h`, `kSyntheticGameOverEveryTicks`), since
+    no real game exists yet to end a session. That line is always marked
+    `(synthetic sessionEnded trigger, not a real press)`; count only the
+    unmarked transition lines against the human's counted deliberate START
+    presses (review F3).
+  - **The window NFR-1 wants recorded:** the harness logs its own
+    effective debounce window at startup (`kDebounceSamples * tick`) —
+    copy that line into `qa.md` rather than assuming the `input.h` design
+    target (review F2).

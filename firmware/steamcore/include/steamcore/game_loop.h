@@ -23,18 +23,30 @@
 
 namespace steamcore {
 
-// Exactly two boolean signals, raw pass-through: no decoding, debouncing
-// or edge-detection is applied anywhere in this file. The two named
-// buttons the console's Controller section already commits to -- not a
-// speculative joystick direction or GPIO state, because no hardware is
-// wired yet to decode one from (spec A7/A8).
+// Seven raw, independent boolean signals -- no decoding, no diagonal
+// encoding, no debouncing or edge-detection anywhere in this file
+// (input-driver spec A2, A8). `start`/`fire` are declared first,
+// deliberately: every already-shipped positional `GameInput{a, b}`
+// literal keeps its original `start=a, fire=b` meaning unchanged after
+// this extension (input-driver NFR-8) -- the five trailing fields
+// aggregate-initialize to `false` for any such literal. `GameSession`
+// (game_state.h) is the sole owner of edge-detection, and only for
+// `start`; every other consumer of this type sees a level, never a
+// pulse. The four direction fields make no attempt to resolve or forbid
+// simultaneous presses into a single "diagonal" value -- holding two
+// adjacent directions is just two fields reading `true` at once.
 struct GameInput {
   bool start = false;
   bool fire = false;
+  bool select = false;
+  bool up = false;
+  bool down = false;
+  bool left = false;
+  bool right = false;
 };
 
-static_assert(sizeof(GameInput) == 2 * sizeof(bool),
-              "GameInput must carry exactly its two named fields");
+static_assert(sizeof(GameInput) == 7 * sizeof(bool),
+              "GameInput must carry exactly its seven named fields");
 
 namespace detail {
 

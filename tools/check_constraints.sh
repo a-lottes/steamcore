@@ -23,6 +23,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 INCLUDE_DIR="firmware/steamcore/include"
 SRC_DIR="firmware/steamcore/src"
 TEST_DIR="firmware/steamcore/test"
+# Defined here, not only where the display-driver port-scoped rules start
+# further down, so the input-driver determinism block above them can
+# also build a port/esp32 path -- its own existence is still verified by
+# the guarded loop further down, this is only the string itself.
+PORT_DIR="firmware/steamcore/port"
 
 for d in "$INCLUDE_DIR" "$SRC_DIR" "$TEST_DIR"; do
   if [ ! -d "$d" ]; then
@@ -210,6 +215,59 @@ for f in $GAME_STATE_TEST_FILES; do
   fi
 done
 
+echo "--- no wall-clock read or unseeded RNG in the input mechanism, including its port/ (input-driver NFR-3) ---"
+# Same shared CLOCK_RNG_PATTERN as the game-loop/game-state blocks above,
+# but scoped differently: this is the one mechanism-lint block that DOES
+# reach into port/ (gpio_input_source.{h,cpp}, added here once T9 builds
+# it), the opposite of the display-driver rule below, which deliberately
+# stays out of port/esp32 (NFR-5 note further down). The reason is what
+# each side of port/ actually feeds: ili9488_display.cpp's SPI wait is
+# display-OUTPUT timing, decoupled from game-logic determinism -- but
+# GpioInputSource's whole job is to hand InputReader the raw level that
+# becomes GameInput, which feeds game logic directly. A clock or RNG read
+# anywhere on that path, including inside the port implementation, would
+# break the same replay-determinism guarantee (constitution §3/§4, NFR-3)
+# the game-loop/game-state blocks above already guard -- input has no
+# "output-only" side to exempt.
+INPUT_DETERMINISM_FILES="$INCLUDE_DIR/steamcore/input.h $TEST_DIR/input_test.cpp $TEST_DIR/input_session_test.cpp $TEST_DIR/fake_input_source.h $PORT_DIR/esp32/gpio_input_source.h $PORT_DIR/esp32/gpio_input_source.cpp"
+# port/esp32/gpio_input_source.{h,cpp} added by T9 (they did not exist
+# when T7 first wrote this block -- see the plan.md T7 deviation note).
+for f in $INPUT_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected input-driver file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the input-driver determinism guarantee (NFR-3) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the input mechanism file set (NFR-2, extends the include/src grep to test/) ---"
+for f in $INPUT_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected input-driver file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the input-driver file set"
+  fi
+done
+
+echo "--- GameInput's seven-field size guard is present (input-driver NFR-8) ---"
+# The size guard itself lives in game_loop.h (T1) -- this only checks it
+# has not been silently deleted, the same "presence, not correctness"
+# posture as the game-state enumerator/cast checks above.
+if [ ! -f "$INCLUDE_DIR/steamcore/game_loop.h" ]; then
+  report "expected game-loop file '$INCLUDE_DIR/steamcore/game_loop.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -qE 'static_assert[[:space:]]*\([[:space:]]*sizeof[[:space:]]*\([[:space:]]*GameInput[[:space:]]*\)[[:space:]]*==[[:space:]]*7[[:space:]]*\*[[:space:]]*sizeof[[:space:]]*\([[:space:]]*bool[[:space:]]*\)' \
+      "$INCLUDE_DIR/steamcore/game_loop.h"; then
+    report "the static_assert(sizeof(GameInput) == 7 * sizeof(bool)) size guard was not found in game_loop.h -- it must not be deleted silently"
+  fi
+fi
+
 echo "--- no integer standing in for a GameState (NFR-4) ---"
 # GameState's whole point is that a state is named, never a number. An
 # enumerator given an explicit value, or a static_cast into/out of the
@@ -228,7 +286,6 @@ else
   fi
 fi
 
-PORT_DIR="firmware/steamcore/port"
 SYSTEM_MAIN_DIR="firmware/system/main"
 DISPLAY_DRIVER_LITERAL_FILES="$INCLUDE_DIR/steamcore/panel_format.h $SRC_DIR/panel_format.cpp $INCLUDE_DIR/steamcore/tile_pusher.h"
 
@@ -266,10 +323,15 @@ echo "--- no GPIO literal outside board_config.h (display-driver, constitution �
 # First automation of constitution §6's non-negotiable ("No GPIO number
 # outside board_config.h") -- every prior increment left this to reviewer
 # diligence. A line naming a gpio/spi/io_num/pin concept AND carrying one
-# of this board's actual pin numbers (9-14, board_config.h) as a bare
-# literal is exactly the failure mode board_config.h exists to prevent:
-# a second, drifting copy of a pin assignment. board_config.h itself is
-# where these numbers are legitimately defined, so it's excluded.
+# of this board's actual pin numbers (4-7, 9-15, 17-18, board_config.h) as
+# a bare literal is exactly the failure mode board_config.h exists to
+# prevent: a second, drifting copy of a pin assignment. board_config.h
+# itself is where these numbers are legitimately defined, so it's
+# excluded. input-driver (T7) extended the digit set from 9-14 (display
+# only) to also cover 4/5/6/7/15/17/18 (input); re-run against the
+# unmodified tree with the extended set first to confirm zero false
+# positives, per this rule's own "narrow the token pattern, never drop a
+# digit" posture.
 GPIO_TOKEN_PATTERN='(gpio|spi|io_num|[Pp]in)'
 # The digit match runs against the LINE CONTENT only, and treats `_` as a
 # token separator. Both were found wrong at review, in opposite
@@ -293,14 +355,14 @@ if grep -rnE --include='*.h' --include='*.cpp' "$GPIO_TOKEN_PATTERN" \
       {
         content = $0
         sub(/^[^:]*:[0-9]+:/, "", content)
-        if (content ~ /(^|[^0-9A-Za-z])(9|10|11|12|13|14)([^0-9A-Za-z]|$)/) {
+        if (content ~ /(^|[^0-9A-Za-z])(4|5|6|7|9|10|11|12|13|14|15|17|18)([^0-9A-Za-z]|$)/) {
           print
           found = 1
         }
       }
       END { exit(found ? 0 : 1) }
     '; then
-  report "a GPIO pin literal (9/10/11/12/13/14) was found near a gpio/spi/io_num/pin token outside board_config.h"
+  report "a GPIO pin literal (4/5/6/7/9/10/11/12/13/14/15/17/18) was found near a gpio/spi/io_num/pin token outside board_config.h"
 fi
 
 echo "--- no resolution/tile-size literal in port/esp32 (display-driver, extends the include/src scan) ---"

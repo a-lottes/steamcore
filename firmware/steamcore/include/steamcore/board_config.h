@@ -27,4 +27,25 @@ inline constexpr int kPinDisplayReset = 9;  // RESET
 // external resistor or GPIO control was needed for this bring-up test.
 // Revisit if the real driver wants PWM dimming later.
 
+// input-driver (T6): seven single-pole normally-open momentary switches,
+// each one leg to its GPIO and the other to a shared common ground, with
+// the internal pull-up enabled in firmware (active-low: a raw read of 0
+// means pressed) -- no external resistors, no analog joystick. Chosen to
+// avoid: GPIO9-14 (already claimed by the display, above), GPIO26-37
+// (reserved for octal PSRAM/flash on this chip variant), the
+// boot-strapping pins 0/3/45/46, and GPIO19/20 (native USB D-/D+, needed
+// for the serial-log capture workaround documented in docs/device-build.md).
+// GPIO16 is deliberately skipped, not just unused: tools/check_constraints.sh's
+// tile-size-literal rule bans a bare `16` anywhere in include/ except
+// config.h, and this file is not config.h -- `kPinInputX = 16` here would
+// fail `make lint` (review F4). Cheaper to skip one pin than weaken that
+// rule.
+inline constexpr int kPinInputUp = 4;
+inline constexpr int kPinInputDown = 5;
+inline constexpr int kPinInputLeft = 6;
+inline constexpr int kPinInputRight = 7;
+inline constexpr int kPinInputStart = 15;
+inline constexpr int kPinInputFire = 17;
+inline constexpr int kPinInputSelect = 18;
+
 }  // namespace steamcore

@@ -75,7 +75,9 @@ struct RecordingGame {
 };
 
 bool inputEquals(const GameInput& a, const GameInput& b) {
-  return a.start == b.start && a.fire == b.fire;
+  return a.start == b.start && a.fire == b.fire && a.select == b.select &&
+         a.up == b.up && a.down == b.down && a.left == b.left &&
+         a.right == b.right;
 }
 
 // Records the address `render` was called with, every tick.
@@ -168,11 +170,32 @@ STEAMCORE_TEST(game_loop_n_hundred_strict_interleaving) {
   checkStrictInterleaving(game, kN);
 }
 
-// AC-3.1: GameInput{} default-constructs both fields false.
-STEAMCORE_TEST(game_loop_input_default_constructs_both_false) {
+// AC-3.1 / input-driver AC-1.3: GameInput{} default-constructs all seven
+// fields false -- no floating or undefined state.
+STEAMCORE_TEST(game_loop_input_default_constructs_all_seven_false) {
   GameInput input{};
   CHECK_EQ(input.start, false);
   CHECK_EQ(input.fire, false);
+  CHECK_EQ(input.select, false);
+  CHECK_EQ(input.up, false);
+  CHECK_EQ(input.down, false);
+  CHECK_EQ(input.left, false);
+  CHECK_EQ(input.right, false);
+}
+
+// input-driver NFR-8: every already-shipped two-argument positional
+// GameInput{a, b} literal keeps meaning exactly start=a, fire=b after the
+// extension to seven fields -- not merely "still compiles". The trailing
+// five fields aggregate-initialize to false.
+STEAMCORE_TEST(game_loop_two_argument_literal_still_means_start_fire) {
+  const GameInput input{true, false};
+  CHECK_EQ(input.start, true);
+  CHECK_EQ(input.fire, false);
+  CHECK_EQ(input.select, false);
+  CHECK_EQ(input.up, false);
+  CHECK_EQ(input.down, false);
+  CHECK_EQ(input.left, false);
+  CHECK_EQ(input.right, false);
 }
 
 // AC-2.1 + AC-3.3: a sequence covering all four start/fire combinations,

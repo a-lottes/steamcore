@@ -16,7 +16,9 @@ idf_component_register(
          "../../steamcore/src/framebuffer.cpp"
          "../../steamcore/src/dirty_tracker.cpp"
          "../../steamcore/src/panel_format.cpp"
+         "../../steamcore/src/game_state.cpp"
          "../../steamcore/port/esp32/ili9488_display.cpp"
+         "../../steamcore/port/esp32/gpio_input_source.cpp"
     INCLUDE_DIRS "." "../../steamcore/include" "../.."
     REQUIRES driver esp_timer
 )
