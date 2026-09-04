@@ -93,19 +93,51 @@ Priority order; the earlier principle wins a tie.
   listings show; a simple ~9-pin header on this board, no touch controller,
   no SD card slot). Over SPI this controller cannot take RGB565 — only 18 bpp
   / 3 bytes per pixel. A full frame is 480×320×3 = 460,800 bytes; at 40 MHz
-  that is ~92 ms ≈ 10.9 fps before overhead. Therefore: **dirty 16×16 tiles
-  pushed by SPI DMA; never a full-frame push.**
-  - **Verified 2026-09-02 by a spike, not by the real driver.** A minimal
-    ESP-IDF bring-up firmware (`firmware/system/`, an ESP-IDF project
-    separate from `firmware/steamcore/`; outside the SPARK loop, not a
-    `/story-time` feature) set COLMOD=0x66 (18bpp) over SPI and filled the
-    real panel with solid Red, Green, Blue, then White; all four rendered as
-    exactly those colors, filling the entire screen evenly, with no
-    streaking, tearing or channel swap. The 18-bpp-only claim is now a
-    **confirmed fact**, not an assumption. This was a write-only bring-up
-    test only — no dirty tiles, no DMA, no `Framebuffer` integration — so the
-    real driver the tile pipeline depends on is still unbuilt, planned
-    future work.
+  that is ~92 ms ≈ 10.9 fps before overhead, a theoretical raw-byte-count
+  figure only (see the measured correction below — the real all-dirty case
+  is worse than this, not better). Therefore: **dirty 16×16 tiles pushed by
+  SPI DMA; never a full-frame push.**
+  - **Pixel format verified 2026-09-02 by a bring-up spike; the real driver
+    has since shipped.** A minimal ESP-IDF bring-up firmware (`firmware/system/`,
+    an ESP-IDF project separate from `firmware/steamcore/`; outside the SPARK
+    loop, not a `/story-time` feature) set COLMOD=0x66 (18bpp) over SPI and
+    filled the real panel with solid Red, Green, Blue, then White; all four
+    rendered as exactly those colors, filling the entire screen evenly, with
+    no streaking, tearing or channel swap. The 18-bpp-only claim is a
+    **confirmed fact**. That spike was write-only — no dirty tiles, no DMA,
+    no `Framebuffer` integration — and has since been **retired**: the
+    `display-driver` feature (**v0.2.0**, commit `113f943e`, released
+    2026-09-04 through the full SPARK loop — spec → design review → plan →
+    increment → peer-review round 2 passed → QA passed, 16/16 Must ACs
+    verified on real hardware) replaced it with the production driver,
+    `firmware/steamcore/port/esp32/ili9488_display.{h,cpp}` —
+    `steamcore`-namespaced engine code, reviewed twice and tested both
+    host-side (a compile-time `TilePusher<Transmitter>` template proves the
+    retry/commit-only-transferred contract — a steady-state SPI failure
+    never crashes, the tile just stays dirty and is retried next push — with
+    a fake transmitter, so the fault-injection ACs run on the host gate) and
+    on the real board. On hardware: full 150-tile dirty pushes work, a
+    `GameLoop<Consumer>`-driven harness ran 21 ticks live with a moving
+    marker (human-confirmed), and the SPI clock reached and held the full 40
+    MHz this section already budgeted for, with no corruption, streaking or
+    tearing at that speed (human-confirmed). The ESP-IDF boundary is a
+    **directory** (`firmware/steamcore/port/esp32/`), not an `#ifdef`: the
+    host build's Makefile globs `firmware/steamcore/src/*.cpp` only, so
+    `port/` is structurally invisible to it, and §4's "no ESP-IDF header in
+    `include/`/`src/`" rule stays absolute, unmodified, un-excepted.
+  - **Measured reality, corrects the theoretical figure above.** A full
+    150-tile (all-dirty) push at 40 MHz measured **~230 ms (~4.3 fps)** —
+    worse than the ~92 ms ≈ 10.9 fps naive full-frame byte-count math above,
+    not better, because per-tile SPI overhead (~919 µs fixed cost per tile
+    transaction on top of data time) adds up across 150 tiles. The dirty-tile
+    mechanism's real benefit is in typical **partial**-churn frames — a
+    handful of tiles changing per tick, e.g. this feature's own on-device
+    harness measured ~7 ms for a 2-tile push — not in the worst-case
+    all-dirty frame, which is mathematically no cheaper than a full-frame
+    push at the same clock. "Dirty tiles are always fast" is not a claim
+    this project can make; "dirty tiles are fast when churn is partial,
+    which is the normal case" is. Measured 2026-09-03/04
+    (`display-driver` plan.md §3 task T11; `qa.md` NFR-1).
 - **Open (Phase 4):** the final 7–8" panel is ~800×480. 240×160 scales integer
   to 480×320 (×2) or 720×480 (×3, letterboxed) — neither fills 800×480. Whether
   that panel gets ×3 with letterboxing or its own virtual resolution is
@@ -147,10 +179,15 @@ Priority order; the earlier principle wins a tie.
   distinct from the host-testable `firmware/steamcore/`) was built, flashed
   to the real board, and run: logging over the native USB-Serial/JTAG port
   and confirmed visually (§3). So: **host-compiled code runs today, and the
-  firmware can now be built, flashed and run on hardware.** Keep this honest
-  about scope — that was a spike/bring-up test (no dirty tiles, no DMA, no
-  `Framebuffer` integration), not the production display driver, which
-  remains future planned work.
+  firmware can now be built, flashed and run on hardware.** That original
+  bring-up was a spike only (no dirty tiles, no DMA, no `Framebuffer`
+  integration) — **the production display driver has since shipped**
+  (`display-driver` v0.2.0, commit `113f943e`, released 2026-09-04):
+  `firmware/steamcore/port/esp32/ili9488_display.{h,cpp}`, reviewed twice and
+  tested both via host-side `TilePusher<Transmitter>` fault injection and on
+  real hardware, with dirty-tile pushes, retry-on-transient-failure and a
+  `GameLoop`-driven harness all proven live on the board at the full 40 MHz
+  clock (§3).
   - **Hardware quirk worth recording, so it isn't re-discovered from
     scratch:** on this board, the native USB-Serial/JTAG port's software
     auto-reset-to-run (RTS/DTR) reliably lands the chip in ROM download mode,
@@ -252,3 +289,4 @@ Priority order; the earlier principle wins a tie.
 | 2026-09-01 | §6: persisted data must carry a format version | User accepted; a corrupt-read highscore block is a silent-failure class worth blocking |
 | 2026-09-02 | §2: engine↔game contract corrected — `render()` → `render(Framebuffer&)`; `update(GameInput)` → `update(const GameInput&)`; `onCollision(Entity&, Entity&)` marked not yet implemented | `game-loop` (plan §1 Decision 4, user-approved) shipped `render(Framebuffer&)` so the framebuffer-identity guarantee (AC-2.2) is structural, not caller discipline; the actual `tick()` call is `update(const GameInput&)`, matching the `render` fix's own reasoning rather than leaving the same drift class half-corrected; `game-loop` review F9 flagged §2 as stale against its own "central contract" claim, since `Entity`/`onCollision` remain unbuilt and the constitution implied otherwise |
 | 2026-09-02 | §3: ILI9488 18-bpp-only claim moved from unverified assumption to **confirmed fact**, and exact module identified as KMRTM35018-SPI; §3 pin assignment moved from placeholder to **wired, fixed** values in `board_config.h` (CS=10, RESET=9, DC=14, MOSI=11, SCK=12, MISO=13; backlight direct to 3V3, no GPIO); §4 toolchain reality updated — ESP-IDF v5.4.4 now installed, a bring-up firmware target built/flashed/run on the real board; physical-reset-button-after-flash quirk recorded | A hardware bring-up spike (`firmware/system/`, outside the SPARK loop, not a `/story-time` feature) today flashed a minimal ESP-IDF test firmware to the real board and physically verified the pixel format and wiring these constitutional passages previously only asserted or left as placeholder |
+| 2026-09-04 | §3 Display path: removed the "not by the real driver" / "still unbuilt, planned future work" language for the production ILI9488 driver, and corrected the all-dirty-frame timing implication — measured 150-tile push at 40 MHz is ~230 ms (~4.3 fps), worse than the ~92 ms naive full-frame byte-count figure, not better; the dirty-tile mechanism's real benefit is in typical partial-churn frames, not the worst case. §4 Quality Bars "Toolchain reality": removed the "spike/bring-up test... not the production display driver, which remains future planned work" language | The `display-driver` feature shipped and released as **v0.2.0** (commit `113f943e`, 2026-09-04) through the full SPARK loop — spec → design review → plan → increment → peer-review round 2 passed → QA passed, 16/16 Must ACs verified on real hardware (`firmware/steamcore/port/esp32/ili9488_display.{h,cpp}`) — making both passages factually false as written; flagged for this amendment by `release.md` §5 (finding F12). *Note: the orchestrator's task requested this entry be dated 2026-09-03; `release.md` records the release commit and tag as dated 2026-09-04 (QA passed 2026-09-03, released the next day), so this entry uses the verified release date instead — flagged back to the user rather than silently picking one.* |
