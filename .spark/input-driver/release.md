@@ -5,23 +5,22 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 2), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.3.0 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.3.0 |
 | **Date** | 2026-09-04 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, fresh pre-flight green on host
-  and device toolchains, everything below prepared and reversible. Nothing
-  committed or tagged yet: this is the prepare-only pass, awaiting the user's
-  explicit go before any commit/tag executes.
+- **Status:** `released` — both gates green, fresh pre-flight green on host
+  and device toolchains before the commit, release actions executed
+  (commit `79ea407761e3f0fe6a7ef75d0a698ec1998d99d2`, tag `v0.3.0`), and the
+  post-release smoke check re-run green on the tagged commit itself.
 - **Summary:** `GameInput` grows from two fields to all seven README commits
   to (joystick + SELECT), driven by one debounced core proven host-side
   against a simulated source, plus the real GPIO driver and a wiring guide —
   US-4's on-device confirmation (T10) stays honestly `blocked`, no hardware
   wired yet.
-- **Open:** `1 outstanding` — the actual commit/tag/push-equivalent steps are
-  pending explicit user authorization (relayed by the caller); §3 lists the
-  exact commands not yet run.
+- **Open:** `0 outstanding` — all release actions executed and verified;
+  nothing pending.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the
   final ruling.
 - **On conflict:** the numbered body below wins for everything except
@@ -93,16 +92,17 @@ behavior was already confirmed by earlier releases and is unaffected.
 
 ## 3. Release Actions
 
-*`direct` mode. Nothing below has been executed — prepared and reversible
-only, pending the user's explicit go relayed by the caller.*
+*`direct` mode. Executed 2026-09-04, immediately after re-verifying `git
+status` showed no drift from the file list below and re-running the full
+pre-flight (§1) fresh.*
 
 | Action | Result |
 |---|---|
-| Commit | **Prepared, not executed.** `git commit -m "feat: add input driver — joystick, SELECT and debounced GPIO reads reach GameInput"` (Conventional Commits, constitution §5). |
-| Version bump & tag | **Prepared, not executed.** `git tag -a v0.3.0 -m "input-driver: GameInput grows to 7 fields (joystick+SELECT), debounced GPIO core, wiring guide; US-4 on-device confirmation pending hardware (T10 blocked)"`, pointing at the release commit above (not a historical commit — this feature's entire source is uncommitted, same shape as v0.1.0/v0.2.0). |
+| Commit | **Executed.** `79ea407761e3f0fe6a7ef75d0a698ec1998d99d2` — "feat: add input driver — joystick, SELECT and debounced GPIO reads reach GameInput" (Conventional Commits, constitution §5; Co-Authored-By trailer included). 22 files changed (21 add/modify + 1 delete), matching the file list below exactly; verified via `git status`/`git show --stat` before and after. |
+| Version bump & tag | **Executed.** Annotated tag `v0.3.0` (tag object `fe7326d6bec6878a8ab70a84416074c03b7385cd`) created with the prepared message, pointing at commit `79ea407761e3f0fe6a7ef75d0a698ec1998d99d2` — confirmed via `git rev-parse v0.3.0^{commit}`. |
 | PR / merge | N/A — `direct` mode, no remote configured (`git remote -v` empty). |
-| Deploy | N/A — no deploy pipeline; the device flash is the artifact, already exercised (clean `idf.py build`) in this pass and in `/peer-review`/`/demo-day`. |
-| Post-release smoke check | **Not yet run** — deferred until after the commit/tag actually execute, per this ceremony's "prepare, then publish" order. Will re-run the identical host+device pre-flight (§1) on the tagged commit. |
+| Deploy | N/A — no deploy pipeline; the device flash is the artifact, already exercised (clean `idf.py build`) pre- and post-commit in this pass and earlier in `/peer-review`/`/demo-day`. |
+| Post-release smoke check | **Executed, green.** Re-ran the identical host+device pre-flight on the tagged commit itself (`git rev-parse HEAD` = `79ea407...`, working tree clean of anything but the three unrelated untracked assets): `make test`/`test-asan`/`test-gcc` **154/154 all three**, `make lint` clean (19 blocks), `idf.py fullclean && idf.py build` from `firmware/system/` green, `steamcore_system.bin` 0x2fef0 bytes, 81% partition free — every number reproduces exactly against the pre-commit run in §1, confirming what's tagged is what was verified. |
 
 **Version justification.** `git tag -l` shows `v0.0.1`–`v0.0.4` (retroactive
 catch-ups on historical commits, per `CLAUDE.md`), `v0.1.0`
@@ -120,9 +120,10 @@ meaning (NFR-8, audited: zero call sites take more than two positional args)
 confirmed byte-identical to v0.1.0, no existing symbol removed or
 resignatured).
 
-**Exact file list for the commit (explicit `git add <path>` calls, never
-`-A`/`.`; re-checked against a fresh `git status` immediately before writing
-this report, per `CLAUDE.md`'s re-check rule):**
+**Exact file list committed (explicit `git add <path>` calls, never
+`-A`/`.`; re-checked against a fresh `git status` immediately before staging,
+per `CLAUDE.md`'s re-check rule — no drift found, matched the prepared list
+exactly):**
 - Modified: `docs/device-build.md`, `docs/host-tests.md`,
   `firmware/steamcore/include/steamcore/board_config.h`,
   `firmware/steamcore/include/steamcore/game_loop.h`,
@@ -143,7 +144,8 @@ this report, per `CLAUDE.md`'s re-check rule):**
 
 **Explicitly excluded:** `assets/Buttons.png`, `assets/fonts/`,
 `assets/sprites/` — untracked, pre-existing, unrelated to this feature
-(`review.md` §1); must not ride along in this commit.
+(`review.md` §1); confirmed still untracked after the commit — did not ride
+along.
 
 **Rollback path** (local-only, nothing pushed, nothing to unwind on a remote):
 - Commit made but wrong: `git reset --soft HEAD~1` — restores every file to
@@ -161,7 +163,8 @@ this report, per `CLAUDE.md`'s re-check rule):**
   rather than trusting `fixed` labels) carried straight through to this
   release with zero surprises at pre-flight — every number `review.md`/`qa.md`
   cited (154/154, clean lint, `game_state` byte-identical) reproduced exactly
-  on a from-scratch `idf.py fullclean && idf.py build` and a fresh host run.
+  on a from-scratch `idf.py fullclean && idf.py build` and a fresh host run,
+  both before the commit and again on the tagged commit itself.
 - **What we'd do differently:** the F2 finding (harness tick rate silently
   widening the debounce window) shows the value of stating a design assumption
   in samples, not milliseconds, from the start — the fix was one comment and
@@ -181,15 +184,18 @@ this report, per `CLAUDE.md`'s re-check rule):**
 
 - [x] All pre-flight checks passed at release time — 154/154 x3, lint clean,
       `idf.py fullclean && idf.py build` green from clean, `game_state` diff
-      empty, `git status` re-checked immediately before this report
+      empty, `git status` re-checked immediately before staging, and every
+      number reproduced identically on the post-release smoke check of the
+      tagged commit itself
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified — **prepared, not executed**;
-      commit/tag/post-release smoke check all await the user's explicit go
+- [x] Release actions executed and verified — commit
+      `79ea407761e3f0fe6a7ef75d0a698ec1998d99d2`, annotated tag `v0.3.0`
+      (`fe7326d6bec6878a8ab70a84416074c03b7385cd`) pointing at it, and the
+      post-release smoke check all executed and green
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 143 / Soll ~100 (excluding HTML comments) —
-      43 over; reason: the explicit never-`-A` 22-path file list, the version
+- [x] Line budget respected: Ist 148 / Soll ~100 (excluding HTML comments) —
+      48 over; reason: the explicit never-`-A` 22-path file list, the version
       justification paragraph and the dual gate-recap in §0 together account
       for it, not prose
-- [ ] Status set to `released`, or `handed-off` in declared `pr` mode — stays
-      `preparing`: direct mode, but outward execution has not run yet; this
-      box flips to `released` only after the commit/tag actually execute
+- [x] Status set to `released`, or `handed-off` in declared `pr` mode —
+      `direct` mode, all release actions executed and verified: `released`
