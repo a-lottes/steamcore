@@ -1,5 +1,6 @@
 #include <cstdio>
 
+#include "fixture_pattern.h"
 #include "steamcore/dump_format.h"
 #include "steamcore/framebuffer.h"
 #include "steamcore/sprite.h"
@@ -15,100 +16,14 @@ using steamcore::kDumpFormatVersion;
 using steamcore::kDumpHeaderSize;
 using steamcore::serializeDump;
 using steamcore::Sprite;
+using steamcore::test::drawFixturePattern;
+using steamcore::test::kFixtureAnchors;
 
 namespace {
 
 constexpr size_t kBufferCapacity =
     kDumpHeaderSize +
     static_cast<size_t>(Framebuffer::width()) * Framebuffer::height();
-
-// The "F" glyph, 6 wide x 8 tall, no symmetry axis in either direction —
-// deliberately so a horizontal flip, vertical flip or transpose changes
-// it (docs/dump-format.md "Anchor table"). X = BRIGHT_ORANGE, . = BLACK
-// (transparent under the default blit colour).
-//
-//   XXXXXX
-//   X.....
-//   X.....
-//   XXXX..
-//   X.....
-//   X.....
-//   X.....
-//   X.....
-constexpr int32_t kGlyphWidth = 6;
-constexpr int32_t kGlyphHeight = 8;
-constexpr Color kGlyphF[kGlyphWidth * kGlyphHeight] = {
-    Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE,
-    Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE, Color::BRIGHT_ORANGE,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-    Color::BRIGHT_ORANGE, Color::BLACK,         Color::BLACK,
-    Color::BLACK,         Color::BLACK,         Color::BLACK,
-};
-
-// The real fixture pattern (docs/dump-format.md "Anchor table"): every
-// element chosen so a flip, rotation, transposition, swapped width/height
-// or a stride/row-length error changes at least one anchor value. See
-// dumpFixtureAnchors() below for the exact (x, y) -> colour truths this
-// draws, asserted both here and by the Python round-trip test.
-void drawFixturePattern(Framebuffer& fb) {
-  fb.clear(Color::BLACK);
-
-  // Two unequal, overlapping rects: B is drawn after A, so their overlap
-  // is ORANGE. Neither is square, so a row/column transposition changes
-  // which pixels fall inside which rect.
-  fb.fillRect(20, 20, 60, 40, Color::DARK_ORANGE);  // x[20,80) y[20,60)
-  fb.fillRect(50, 40, 40, 70, Color::ORANGE);        // x[50,90) y[40,110)
-
-  // Asymmetric glyph, blitted (not filled) so the pattern also exercises
-  // Sprite::blit, not just fillRect.
-  const Sprite glyph{kGlyphF, kGlyphWidth, kGlyphHeight, kGlyphWidth};
-  fb.blit(glyph, 150, 20);
-
-  // A one-pixel-wide line spanning only the top third of the screen —
-  // catches a stride/row-length error a filled region would hide.
-  fb.fillRect(200, 0, 1, 53, Color::DARK_ORANGE);
-
-  // Four corners, four different colours (BLACK is the untouched
-  // background at the fourth corner, deliberately, not a fifth colour).
-  fb.setPixel(0, 0, Color::DARK_ORANGE);
-  fb.setPixel(Framebuffer::width() - 1, 0, Color::ORANGE);
-  fb.setPixel(0, Framebuffer::height() - 1, Color::BRIGHT_ORANGE);
-  // Bottom-right corner (width-1, height-1) is left as background BLACK.
-}
-
-struct Anchor {
-  int32_t x;
-  int32_t y;
-  Color expected;
-};
-
-// Same table as docs/dump-format.md "Anchor table" — keep both in sync by
-// hand; this is the one place the C++ side states it in code.
-const Anchor kAnchors[] = {
-    {5, 5, Color::BLACK},               // untouched background
-    {25, 25, Color::DARK_ORANGE},       // inside rect A only
-    {60, 50, Color::ORANGE},            // A/B overlap -- B drawn last, wins
-    {85, 90, Color::ORANGE},            // inside rect B only
-    {150, 20, Color::BRIGHT_ORANGE},    // glyph top-left, an "on" pixel
-    {151, 21, Color::BLACK},            // glyph interior, a transparent hole
-    {200, 10, Color::DARK_ORANGE},      // on the line
-    {200, 100, Color::BLACK},           // below the line's span
-    {0, 0, Color::DARK_ORANGE},         // corner: top-left
-    {239, 0, Color::ORANGE},            // corner: top-right
-    {0, 159, Color::BRIGHT_ORANGE},     // corner: bottom-left
-    {239, 159, Color::BLACK},           // corner: bottom-right (untouched)
-};
 
 }  // namespace
 
@@ -211,7 +126,7 @@ STEAMCORE_TEST(dump_format_matches_published_anchor_table) {
   Framebuffer fb;
   drawFixturePattern(fb);
 
-  for (const Anchor& anchor : kAnchors) {
+  for (const steamcore::test::FixtureAnchor& anchor : kFixtureAnchors) {
     CHECK(fb.pixel(anchor.x, anchor.y) == anchor.expected);
   }
 }

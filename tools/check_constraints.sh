@@ -228,6 +228,143 @@ else
   fi
 fi
 
+PORT_DIR="firmware/steamcore/port"
+SYSTEM_MAIN_DIR="firmware/system/main"
+DISPLAY_DRIVER_LITERAL_FILES="$INCLUDE_DIR/steamcore/panel_format.h $SRC_DIR/panel_format.cpp $INCLUDE_DIR/steamcore/tile_pusher.h"
+
+# Same missing-path posture as the directory guard at the top of this
+# script and the game-loop/game-state file loops (reviews F15/F6): a grep
+# against a path that does not exist fails with "No such file or
+# directory", the surrounding `if` reads that as "no match", and the
+# script would print `make lint OK` having scanned nothing. Verified at
+# review: with firmware/steamcore/port/ moved away, all three port-scoped
+# rules below passed silently and the script exited 0.
+for d in "$PORT_DIR" "$SYSTEM_MAIN_DIR"; do
+  if [ ! -d "$d" ]; then
+    report "expected display-driver directory '$d' (relative to repo root) does not exist -- refusing to skip its checks silently"
+  fi
+done
+for f in $DISPLAY_DRIVER_LITERAL_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected display-driver file '$f' does not exist -- refusing to skip it silently"
+  fi
+done
+
+echo "--- no #include from port/ inside include/ or src/ (display-driver, constitution §4) ---"
+# port/esp32 is the ONLY directory under firmware/steamcore allowed to
+# include an ESP-IDF header -- true today by construction, since the
+# ESP-IDF-header check above already scans include/+src/ and port/ is the
+# one directory it never reaches. This is the other half of that same
+# boundary: the host-tested tree must never reach INTO port/ either, or a
+# single #include would drag an ESP-IDF dependency back across the wall
+# the whole port/ split exists to build (display-driver plan §1 Decision 1).
+if grep -rnE '#include[[:space:]]*[<"]port/' "$INCLUDE_DIR" "$SRC_DIR"; then
+  report "a #include referencing port/ was found inside include/ or src/ -- the host-tested tree must never reach into the ESP-IDF-only driver"
+fi
+
+echo "--- no GPIO literal outside board_config.h (display-driver, constitution §6, first automated) ---"
+# First automation of constitution §6's non-negotiable ("No GPIO number
+# outside board_config.h") -- every prior increment left this to reviewer
+# diligence. A line naming a gpio/spi/io_num/pin concept AND carrying one
+# of this board's actual pin numbers (9-14, board_config.h) as a bare
+# literal is exactly the failure mode board_config.h exists to prevent:
+# a second, drifting copy of a pin assignment. board_config.h itself is
+# where these numbers are legitimately defined, so it's excluded.
+GPIO_TOKEN_PATTERN='(gpio|spi|io_num|[Pp]in)'
+# The digit match runs against the LINE CONTENT only, and treats `_` as a
+# token separator. Both were found wrong at review, in opposite
+# directions:
+#  - `grep -rn` prefixes every hit with `path:lineno:`, so matching the
+#    whole line made any line numbered 9-14 that merely names a
+#    gpio/spi/pin concept a false positive -- reproduced with a file
+#    whose line 10 read `int spiDummy = 0;` and contained no pin literal.
+#  - `\b10\b` never matches ESP-IDF's own canonical spelling
+#    `GPIO_NUM_10` (no word boundary after `_`), which is the single most
+#    likely way a stray pin literal actually appears in port/ --
+#    reproduced with `gpio_set_level(GPIO_NUM_10, 1)`, which passed clean.
+# awk, not grep, because the match has to be made against the stripped
+# text while the report still names the file and the original line -- the
+# same reason the glyph-metric check above uses awk.
+if grep -rnE --include='*.h' --include='*.cpp' "$GPIO_TOKEN_PATTERN" \
+    "$INCLUDE_DIR" "$SRC_DIR" "$PORT_DIR" "$SYSTEM_MAIN_DIR" \
+    | grep -v '/board_config\.h:' \
+    | grep -vE ':[0-9]+:[[:space:]]*//' \
+    | awk '
+      {
+        content = $0
+        sub(/^[^:]*:[0-9]+:/, "", content)
+        if (content ~ /(^|[^0-9A-Za-z])(9|10|11|12|13|14)([^0-9A-Za-z]|$)/) {
+          print
+          found = 1
+        }
+      }
+      END { exit(found ? 0 : 1) }
+    '; then
+  report "a GPIO pin literal (9/10/11/12/13/14) was found near a gpio/spi/io_num/pin token outside board_config.h"
+fi
+
+echo "--- no resolution/tile-size literal in port/esp32 (display-driver, extends the include/src scan) ---"
+# The resolution- and tile-size-literal checks above only scan include/+
+# src/, so they never reach port/esp32 -- this extends the same rule
+# there. panel_format.{h,cpp}/tile_pusher.h already fall under the
+# general include/+src/ scan; this block is specifically the coverage
+# gap those checks structurally cannot close on their own.
+if grep -rnE --include='*.h' --include='*.cpp' '\b(240|160|480|320|16)\b' \
+    "$PORT_DIR" \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "a resolution or tile-size literal (240/160/480/320/16) was found in port/esp32, outside config.h"
+fi
+
+echo "--- no bare scale-factor literal in the display-driver pixel/tile math (AC-2.2) ---"
+# panel_format.{h,cpp} and tile_pusher.h are exactly the files whose
+# whole job is the x2 engine-to-panel mapping -- a "* 2" or "2 *"
+# anywhere in their logic would be an unnamed second copy of kPanelScale
+# that could silently drift from config.h's definition if the panel's
+# scale factor ever changes (constitution §3 "Open (Phase 4)"). Scoped to
+# multiplication specifically, not every bare "2": panel_format.cpp
+# legitimately indexes individual RGB byte offsets (out[index + 2] for
+# the blue channel), which is unrelated to the scale factor and would be
+# a false positive under a broader "any bare 2" pattern.
+if grep -rnE --include='*.h' --include='*.cpp' '([*][[:space:]]*2\b)|(\b2[[:space:]]*[*])' \
+    $DISPLAY_DRIVER_LITERAL_FILES \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "a bare scale-factor multiplication (*2 or 2*) was found in the display-driver pixel/tile math, outside config.h's kPanelScale"
+fi
+
+echo "--- no full-frame SPI transaction: spi_device_transmit stays inside port/esp32/ili9488_display.cpp only (AC-3.3) ---"
+# The real guard against a full-frame push is structural (plan §1
+# Decision 4: TilePusher's Transmitter concept only ever offers one tile
+# at a time) -- this lint rule guards the OTHER way a full-frame push
+# could reappear: a second, ad-hoc SPI call site outside the one file
+# that owns hardware transmission, the same shape the deleted bring-up
+# spike's own scanline-fill function was. Recorded interpretation: this
+# checks *where* spi_device_transmit is called from, not the byte count
+# of any one call -- a transfer-size check would need to parse C++
+# expressions, which grep cannot do reliably.
+if grep -rlE '\bspi_device_(transmit|polling_transmit)[[:space:]]*\(' \
+    "$INCLUDE_DIR" "$SRC_DIR" "$PORT_DIR" "$SYSTEM_MAIN_DIR" \
+    | grep -v '/port/esp32/ili9488_display\.cpp$'; then
+  report "spi_device_transmit/spi_device_polling_transmit was called outside port/esp32/ili9488_display.cpp -- the display driver's SPI transmission must have exactly one call site in the codebase"
+fi
+
+echo "--- no dynamic allocation in port/esp32 (display-driver, NFR-2, extends the include/src grep) ---"
+if grep -rnE "$SCOPED_ALLOC_PATTERN" \
+    "$PORT_DIR" \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "dynamic allocation or a forbidden container/string/smart-pointer type was found in port/esp32"
+fi
+
+# Note (NFR-5): unlike the game-loop/game-state blocks above, this
+# feature does NOT get a clock/RNG ban in port/esp32 -- waiting for an
+# SPI DMA transfer to complete is display-OUTPUT timing, decoupled from
+# and never feeding back into the 60Hz game-logic determinism guarantee
+# (spec NFR-5). US-5's clock-speed tuning (a later task) also legitimately
+# measures elapsed time there. The pixel-conversion/tile-mapping math
+# (panel_format.{h,cpp}, tile_pusher.h) IS covered -- it lives in
+# include/+src/, so the project-wide allocation check above already
+# reaches it, and it has no timing/RNG dependency to guard in the first
+# place.
+
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather
 # than trusting a list of known-bad packages we might not think of

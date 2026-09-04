@@ -1,5 +1,22 @@
+# Two build systems must both learn about a new engine .cpp: the host
+# Makefile globs firmware/steamcore/src/*.cpp automatically, this list
+# does not (display-driver plan §1, §5 "Two build systems" risk). A
+# deliberate, explicit SRCS list was chosen over a globbing ESP-IDF
+# component precisely because it fails LOUDLY -- an undefined reference at
+# link time -- when it drifts, instead of quietly compiling a stale set.
+# So: adding a file under firmware/steamcore/src/ that the device needs
+# means adding it here too.
+#
+# INCLUDE_DIRS: "../../steamcore/include" is the engine's public surface;
+# "../.." (i.e. firmware/) exists only so the device harness can reach
+# "steamcore/port/esp32/..." and the shared test fixture
+# "steamcore/test/fixture_pattern.h". Nothing else may rely on it.
 idf_component_register(
-    SRCS "app_main.cpp" "ili9488_display.cpp"
-    INCLUDE_DIRS "." "../../steamcore/include"
-    REQUIRES driver
+    SRCS "app_main.cpp"
+         "../../steamcore/src/framebuffer.cpp"
+         "../../steamcore/src/dirty_tracker.cpp"
+         "../../steamcore/src/panel_format.cpp"
+         "../../steamcore/port/esp32/ili9488_display.cpp"
+    INCLUDE_DIRS "." "../../steamcore/include" "../.."
+    REQUIRES driver esp_timer
 )
