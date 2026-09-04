@@ -49,3 +49,35 @@ every modified/untracked path that belongs to the feature should appear in
 the list, and every path in the list should still exist and still be
 relevant. Add what's missing before committing; never assume the prepared
 list from an earlier turn is still complete.
+
+## Hardware-gated Should: split the buildable half from the blocked half
+
+When a story depends on physical hardware that isn't acquired/wired yet
+(`display-driver`'s US-5 clock-speed tuning, `input-driver`'s US-4 on-device
+confirmation), don't let the whole story slip to "later" as one lump, and
+don't silently drop it either. Split it into two tasks at `/sprint-plan`
+time:
+
+- **The buildable half** — anything a compiler (host or cross) can verify
+  without the physical part actually being present: writing the real
+  device-side driver/source, wiring it into the build, confirming
+  `idf.py build` (or the equivalent) is green, and confirming the shipped
+  public APIs it touches are used unmodified by reading the source. This
+  task is executable today and should be, not deferred alongside the part
+  that genuinely can't be.
+- **The blocked half** — the actual on-device confirmation with a human at
+  the real controls. Ordered last, explicitly hardware-gated in its own
+  Definition of Done ("executable only if X is physically wired/acquired by
+  `/increment` time; if not, report `blocked` with the reason and record
+  its ACs as explicitly unverified — never as passed, never satisfied by a
+  substitute").
+
+`blocked` is a legitimate, plan-anticipated terminal state for that one
+task — not a failure, not grounds to hold the whole feature back from
+`/peer-review`/`/demo-day`/`/go-live`, provided (as both these features'
+specs did) the story carrying the hardware-gated ACs is scoped as a
+**Should**, not a Must, so the loop's "every Must AC verified" gates are
+satisfiable without it. Record the block plainly everywhere a reader would
+look: the plan's task row, the wiring/setup doc's own status line, and
+`qa.md`'s AC table (as `not capturable`, with the reason — never quietly
+omitted).
