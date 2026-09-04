@@ -5,21 +5,21 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 2), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.2.0 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.2.0 |
 | **Date** | 2026-09-04 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, fresh pre-flight green on host and
-  device toolchains, release fully staged but **no commit/tag created**; no
-  outward-facing or irreversible action taken.
+- **Status:** `released` — both gates green, fresh pre-flight green on host and
+  device toolchains before the commit, release committed and tagged, and the
+  identical pre-flight re-run clean on the tagged commit itself.
 - **Summary:** the engine's `Framebuffer`/`DirtyTracker` output now reaches the real
   ILI9488 panel over SPI, tick-driven by `GameLoop`, at 40 MHz, dirty-tile-only, with
   graceful retry on transient failures — the cabinet's screen, finally driven by the
   engine and not a disconnected hardware spike.
-- **Open:** `2 items for the orchestrator` — (1) explicit go-ahead to run the
-  prepared commit/tag (§3); (2) the F12/F13 constitution/README staleness flag (§5).
-  Neither blocks the gate; both need a human call before publishing.
+- **Open:** `1 item for the orchestrator` — the F12/F13 constitution/README
+  staleness flag (§5). Does not block the gate; needs a human call
+  (`/charter` for F12, a scheduled README pass for F13).
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the final ruling.
 - **On conflict:** the numbered body wins for everything except `Status`/`Version`;
   log the mismatch at the next `/go-live` and proceed.
@@ -40,21 +40,24 @@
 
 ## 1. Pre-Flight Checks
 
-*Fresh this pass, on current HEAD + uncommitted tree — not copied from prior docs.*
+*Run twice this pass: once before the commit (working tree), once again after,
+on the tagged release commit itself — not copied from prior docs either time.*
 
 - [x] `review.md` status `passed`
 - [x] `qa.md` status `passed`
-- [x] Full suite green, both halves — **host:** `make clean && make test-all`:
-      124/124 x3 builds (clang, ASan/UBSan, g++), `test-negative` OK, 3 benches OK,
-      15+2 Python OK, `test-png-external` OK, `make lint` OK (17 blocks, incl. 5
-      display-driver). **Device:** `idf.py fullclean && idf.py build` in
-      `firmware/system/` (ESP-IDF exported first) — links clean, 78% flash free.
+- [x] Full suite green, both halves, **before and after the commit** — **host:**
+      `make clean && make test-all`: 124/124 x3 builds (clang, ASan/UBSan, g++),
+      `test-negative` OK, 3 benches OK, 15+2 Python OK, `test-png-external` OK,
+      `make lint` OK (17 blocks, incl. 5 display-driver). **Device:** `idf.py
+      fullclean && idf.py build` in `firmware/system/` (ESP-IDF exported first) —
+      links clean, 78% flash free, both passes identical.
 - [x] Build succeeds from clean — `make clean` and `idf.py fullclean` both run
-      before their builds this pass.
-- [x] No unaccounted uncommitted changes — every uncommitted path maps to §3's file
-      list except three untracked leftovers confirmed (`git log --all`) to predate
-      this feature: `assets/Buttons.png`, `assets/fonts/`, `assets/sprites/` —
-      excluded from the prepared commit, same discipline as every prior release.
+      before both builds, before and after the commit.
+- [x] No unaccounted uncommitted changes — every uncommitted path mapped to §3's
+      file list except three untracked leftovers confirmed (`git log --all`) to
+      predate this feature: `assets/Buttons.png`, `assets/fonts/`, `assets/sprites/` —
+      excluded from the commit, same discipline as every prior release. Confirmed
+      absent from `git status` after the commit too.
 
 ## 2. Changelog
 
@@ -77,15 +80,29 @@
 
 ## 3. Release Actions
 
-*`direct` mode, **prepare-only**: commit + local tag are drafted, not executed — no
-go-ahead relayed yet. Nothing below has left the working tree.*
+*`direct` mode, executed with explicit user go-ahead ("Ja", relayed by the
+orchestrator in direct response to this file's prepared §3). Local-only —
+nothing pushed, no remote configured.*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Prepared, not executed.** `v0.2.0`, annotated on the new release commit (no historical commit exists to point at — see justification). Staged: `git tag -a v0.2.0 -m "v0.2.0: display driver (Framebuffer/DirtyTracker reaches the real ILI9488 panel over SPI, GameLoop-driven, 40MHz)"` |
+| Commit | **Executed.** `113f943ea27ce9386ec27d232437b738557c8312` — "Add display driver: engine output now reaches the real ILI9488 panel", 24 files changed, on `main`. |
+| Version bump & tag | **Executed.** `v0.2.0`, annotated tag object `9e61155546da7da6f507f496a010c56452620f9e`, pointing at release commit `113f943ea27ce9386ec27d232437b738557c8312` (no historical commit exists to point at — see justification). Verified via `git rev-parse v0.2.0^{commit}` == the commit hash above. |
 | PR / merge | N/A — `direct` mode, no remote |
 | Deploy | N/A — no deploy pipeline; the device flash *is* the artifact, already exercised live in `/increment`/`/peer-review`/`/demo-day` |
-| Post-release smoke check | **Not yet run** — pending the commit/tag; will re-run host + `idf.py build` on the tagged commit once authorized |
+| Post-release smoke check | **Executed, green.** Host: `make clean && make test-all` on the tagged commit — 124/124 x3, `test-negative` OK, 3 benches OK, 15+2 Python OK, `test-png-external` OK, `make lint` OK (17 blocks). Device: `idf.py fullclean && idf.py build` from `firmware/system/` on the tagged commit — links clean, 78% flash free. |
+
+**Correction applied during execution.** The plan drafted in this file's
+`preparing` pass omitted `tools/check_constraints.sh` from the commit's file
+list, even though `git status` showed it genuinely modified (T9 added 5 new
+lint rules there: no `#include` from `port/` inside `include/`/`src/`, no GPIO
+literal outside `board_config.h`, no resolution/tile-size literal in
+`port/esp32`, no bare scale-factor literal in the display-driver pixel/tile
+math, no full-frame SPI transaction outside `ili9488_display.cpp`, no dynamic
+allocation in `port/esp32`). Left out, T9's entire lint-rule deliverable would
+have silently shipped uncommitted while the code it protects went in. Corrected
+before staging; `tools/check_constraints.sh` is included in the commit and
+confirmed present in `git show --stat` for `113f943e`.
 
 **Version justification.** `git tag -l`: `v0.0.1`–`v0.0.4` are retroactive
 catch-ups tagged on historical source commits (per `CLAUDE.md`); `v0.1.0`
@@ -98,24 +115,29 @@ purely additive surface (`toPanelPixel`, `tileWindow`, `expandTile`,
 other existing public API confirmed unchanged (`git diff --exit-code`, clean, per
 `review.md`/`qa.md`).
 
-**Exact commit file list (explicit paths, never `-A`/`.`):** `docs/host-tests.md`,
-`docs/device-build.md`, `firmware/steamcore/include/steamcore/config.h`,
-`.../panel_format.h`, `.../tile_pusher.h`, `firmware/steamcore/src/panel_format.cpp`,
+**Exact commit file list (24 paths, explicit `git add <path>` calls, never
+`-A`/`.`):** `docs/host-tests.md`, `docs/device-build.md`,
+`firmware/steamcore/include/steamcore/config.h`, `.../panel_format.h`,
+`.../tile_pusher.h`, `firmware/steamcore/src/panel_format.cpp`,
 `firmware/steamcore/port/esp32/ili9488_display.{h,cpp}`,
 `firmware/steamcore/test/dump_format_test.cpp`, `.../fixture_pattern.h`,
 `.../panel_format_test.cpp`, `.../tile_pusher_test.cpp`,
 `firmware/system/CMakeLists.txt`, `firmware/system/main/CMakeLists.txt`,
-`firmware/system/main/app_main.cpp`, `.../harness_consumer.h`, and the two
-**deletions** `firmware/system/main/ili9488_display.{h,cpp}` (staged via `git add`
-on the removed path), plus `.spark/display-driver/{spec,plan,review,qa,release}.md`.
-Then `git commit -m "Add display driver: ..."` and the tag command above.
-**Explicitly excluded:** `assets/Buttons.png`, `assets/fonts/`, `assets/sprites/`.
+`firmware/system/main/app_main.cpp`, `.../harness_consumer.h`, the two
+**deletions** `firmware/system/main/ili9488_display.{h,cpp}`,
+`tools/check_constraints.sh` (added by correction — see above), plus
+`.spark/display-driver/{spec,plan,review,qa,release}.md`.
+**Explicitly excluded:** `assets/Buttons.png`, `assets/fonts/`, `assets/sprites/`
+(confirmed pre-existing and unrelated; still untracked after the commit).
 
 **Rollback path** (local-only, nothing pushed):
-- Pre-authorization: nothing to roll back, no command has run.
-- Commit wrong: `git reset --soft HEAD~1` — restores files to working tree, nothing lost.
-- Tag wrong: `git tag -d v0.2.0` — local tag only, commit untouched.
-- Both wrong: delete the tag first, then soft-reset.
+- Commit wrong: `git reset --soft HEAD~1` — restores files to working tree,
+  nothing lost. Run `git tag -d v0.2.0` first if the tag was also created.
+- Tag wrong but commit fine: `git tag -d v0.2.0` — local tag only, commit
+  untouched, re-tag once corrected.
+- Both wrong: `git tag -d v0.2.0` then `git reset --soft HEAD~1`.
+- Nothing has been pushed to any remote (`git remote -v` empty), so no
+  force-push or remote cleanup is ever needed for this release.
 
 ## 4. Learnings (Keep!)
 
@@ -127,11 +149,17 @@ Then `git commit -m "Add display driver: ..."` and the tag command above.
 - **What we'd do differently:** F15 (the on-device anchor log restates constants,
   never reads the actual framebuffer) shipped as an accepted Minor — revisit before
   a second visual feature reuses that log pattern, so "proves the mapping" and
-  "proves what was drawn" stay distinct.
+  "proves what was drawn" stay distinct. Also: the prepared file list in a
+  `preparing`-status release.md should be cross-checked against a fresh `git
+  status` at execution time, not trusted as-is — `tools/check_constraints.sh`
+  was genuinely modified (T9's lint rules) and was missing from the original
+  plan; caught only because the orchestrator re-diffed before staging.
 - **Patterns worth reusing:** pairing `idf.py fullclean && idf.py build` with `make
   clean && make test-all` at release time is worth standardizing as this project's
   two-halves pre-flight for every future `port/`-touching feature. Candidate for
-  `CLAUDE.md`.
+  `CLAUDE.md`. Re-running that same two-halves pre-flight a second time, on the
+  tagged commit, after the commit — not just before it — is worth keeping as
+  standard practice too.
 
 ## 5. Flagged for the orchestrator: F12/F13 staleness
 
@@ -158,13 +186,16 @@ decide whether to run `/charter` (F12) and schedule the README pass (F13).
 
 *All boxes checked → the loop is closed. The feature is done-done.*
 
-- [x] All pre-flight checks passed at release time — 3/3, host + device, from clean
+- [x] All pre-flight checks passed at release time — 3/3, host + device, from
+      clean, run twice (pre-commit and post-tag), both clean
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified — **prepared, not executed**: commit and
-      tag staged (§3), awaiting explicit go-ahead
+- [x] Release actions executed and verified — commit `113f943e`, tag `v0.2.0`
+      (annotated, on that commit), post-release smoke check green on both halves
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 170 / Soll ~100 (excluding HTML comments) — 38
-      over; reason: the explicit never-`-A` file list, dual host+device pre-flight,
-      and the required F12/F13 flag section together account for it, not prose
-- [ ] Status set to `released`, or `handed-off` in declared `pr` mode — **neither**:
-      mode is `direct`, status is `preparing`, awaiting go for §3's commit/tag
+- [x] Line budget respected: Ist 176 / Soll ~100 (excluding HTML comments) — 76
+      over; reason: the explicit never-`-A` 24-path file list (grown by one for
+      the correction), dual host+device pre-flight run twice, the correction
+      note, and the required F12/F13 flag section together account for it, not
+      prose
+- [x] Status set to `released`, or `handed-off` in declared `pr` mode —
+      `direct` mode, status is `released`
