@@ -268,6 +268,89 @@ else
   fi
 fi
 
+START_SCREEN_FILES="$INCLUDE_DIR/steamcore/title_screen.h $SRC_DIR/title_screen.cpp $TEST_DIR/title_screen_test.cpp $TEST_DIR/title_screen_session_test.cpp $TEST_DIR/title_screen_determinism_test.cpp $TEST_DIR/title_screen_game.h"
+
+echo "--- no wall-clock read or unseeded RNG in the title-screen mechanism (start-screen AC-2.3) ---"
+# Same shared CLOCK_RNG_PATTERN as every other determinism-mechanism
+# block above: drawTitleScreen's whole contract is a pure function of
+# GameState, so a clock or RNG read anywhere in this file set would
+# break AC-2.3 exactly as it would for game-loop/game-state/input.
+for f in $START_SCREEN_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected start-screen file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the start-screen determinism guarantee (AC-2.3) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the title-screen file set (NFR-2, extends the include/src grep to test/) ---"
+for f in $START_SCREEN_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected start-screen file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the start-screen file set"
+  fi
+done
+
+echo "--- no asset/PNG/TTF reference in title_screen.{h,cpp} (start-screen AC-1.4) ---"
+# AC-1.4: the wordmark and prompt are drawn entirely from the shipped
+# font -- automates "no decoded PNG/TTF byte, no art asset" as a grep
+# rather than trusting a reviewer to notice an added #include or path.
+if [ ! -f "$INCLUDE_DIR/steamcore/title_screen.h" ] || [ ! -f "$SRC_DIR/title_screen.cpp" ]; then
+  report "expected start-screen file title_screen.h or title_screen.cpp does not exist -- refusing to skip it silently"
+else
+  if grep -nHE 'assets/|\.png|\.ttf' \
+      "$INCLUDE_DIR/steamcore/title_screen.h" "$SRC_DIR/title_screen.cpp" \
+      | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "an assets/, .png or .ttf reference was found in title_screen.h/.cpp -- the title screen must be drawn from the shipped font only (AC-1.4)"
+  fi
+fi
+
+echo "--- title_screen.cpp draws only through drawText (start-screen AC-1.3) ---"
+# AC-1.3 becomes structural rather than reviewed: with no bespoke art of
+# its own, this feature has no legitimate reason to call setPixel,
+# fillRect or blit directly -- every pixel must come from drawText.
+if [ ! -f "$SRC_DIR/title_screen.cpp" ]; then
+  report "expected start-screen file '$SRC_DIR/title_screen.cpp' does not exist -- refusing to skip it silently"
+else
+  if grep -nHE '\bsetPixel[[:space:]]*\(|\bfillRect[[:space:]]*\(|\bblit[[:space:]]*\(' \
+      "$SRC_DIR/title_screen.cpp" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "title_screen.cpp calls setPixel/fillRect/blit directly -- it must draw only through drawText (AC-1.3)"
+  fi
+fi
+
+echo "--- title-screen disjointness static_assert is present (start-screen AC-1.6) ---"
+# Presence, not correctness -- the assert's own logic is proven by T3's
+# host tests; this only guards against it being silently deleted. Anchored
+# on the assert's own message text, not just "a static_assert exists" --
+# title_screen.h has several (the .w-tracks-string-length guards, the
+# on-screen guards), so a bare "static_assert" match would stay green
+# even if this specific one were deleted. review F9: the message text
+# must appear on a real code line, not merely survive in a `//` comment
+# after the actual static_assert is deleted -- same comment-line
+# exclusion every other rule in this script already applies -- anchored
+# on ^, not the :[0-9]+:[[:space:]]*// form used elsewhere, because THIS
+# grep has no -r and therefore no leading `file:` before the line number
+# (plain `grep -n` here outputs "LINENO:content", not "path:LINENO:
+# content") -- the shared form was tried first and silently matched
+# nothing, which made this check a no-op that still passed on a
+# comment-only survivor (caught only by deliberately re-testing the
+# mutation this fix exists for, not by code review alone).
+if [ ! -f "$INCLUDE_DIR/steamcore/title_screen.h" ]; then
+  report "expected start-screen file '$INCLUDE_DIR/steamcore/title_screen.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nF 'must not overlap' "$INCLUDE_DIR/steamcore/title_screen.h" \
+      | grep -qvE '^[0-9]+:[[:space:]]*//'; then
+    report "the kTitleWordmarkBounds/kTitlePromptBounds disjointness static_assert was not found in title_screen.h -- it must not be deleted silently (AC-1.6)"
+  fi
+fi
+
 echo "--- no integer standing in for a GameState (NFR-4) ---"
 # GameState's whole point is that a state is named, never a number. An
 # enumerator given an explicit value, or a static_cast into/out of the
@@ -432,7 +515,7 @@ echo "--- tools/*.py imports only from the standard library (constitution NFR-4)
 # than trusting a list of known-bad packages we might not think of
 # (spec A5/C8 -- no pip install, no Pillow). "fb_view" is this project's
 # own local module, not a stdlib one, and is allowed for that reason.
-PY_ALLOWED_IMPORTS="argparse os re struct subprocess sys tempfile time unittest zlib fb_view __future__"
+PY_ALLOWED_IMPORTS="argparse os re struct subprocess sys tempfile time unittest zlib fb_view scfb_capture __future__"
 # Matching must not be anchored to column 0 and must split a comma list:
 # an indented `import requests` (inside a function or a
 # `try:`/`except ImportError:` block -- the canonical way an optional

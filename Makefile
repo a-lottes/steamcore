@@ -33,6 +33,13 @@ CXXFLAGS += -DSTEAMCORE_FIXTURE_DUMP='"$(FIXTURE_DUMP)"'
 TEXT_DUMP := $(BUILD_DIR)/text_pattern.scfb
 CXXFLAGS += -DSTEAMCORE_TEXT_DUMP='"$(TEXT_DUMP)"'
 
+# Same reasoning and same clean-title-dump/`view` wiring as TEXT_DUMP
+# above (start-screen T9): uncommitted, lives in build/, and the
+# prerequisite ordering below is what keeps a FILTER'd `make view` from
+# ever decoding a stale file instead of failing loudly on a missing one.
+TITLE_DUMP := $(BUILD_DIR)/title_screen_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_TITLE_DUMP='"$(TITLE_DUMP)"'
+
 ENGINE_SRCS := $(wildcard $(SRC_DIR)/*.cpp)
 TEST_SRCS := $(wildcard $(TEST_DIR)/*_test.cpp)
 HARNESS_SRCS := $(TEST_DIR)/test_harness.cpp $(TEST_DIR)/test_main.cpp
@@ -43,6 +50,7 @@ ASAN_BIN := $(BUILD_DIR)/steamcore_tests_asan
 BENCH_BIN := $(BUILD_DIR)/steamcore_bench
 TEXT_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_text
 GAME_LOOP_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_game_loop
+TITLE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_title_screen
 
 # Every binary target below is itself .PHONY: its recipe runs on EVERY
 # invocation, unconditionally, regardless of any file mtime. This host
@@ -54,7 +62,7 @@ GAME_LOOP_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_game_loop
 # takes ~1.3s, which is cheap enough that giving up incremental caching
 # entirely is the right trade for a gate that must never report success
 # on code it did not actually just compile.
-.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN)
+.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN)
 
 .PHONY: test
 test: $(TEST_BIN)
@@ -119,10 +127,11 @@ test-gcc:
 	$(MAKE) test CXX=g++
 
 .PHONY: bench
-bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN)
+bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN)
 	$(BENCH_BIN)
 	$(TEXT_BENCH_BIN)
 	$(GAME_LOOP_BENCH_BIN)
+	$(TITLE_BENCH_BIN)
 
 $(BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
@@ -136,8 +145,13 @@ $(GAME_LOOP_BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_game_loop.cpp
 
+$(TITLE_BENCH_BIN):
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_title_screen.cpp
+
 VIEWER_PNG := $(BUILD_DIR)/pattern.png
 TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
+TITLE_VIEWER_PNG := $(BUILD_DIR)/title_screen.png
 
 # US-5: one command from a clean checkout to viewable PNGs of the
 # rendering-core fixture and the text-rendering fixture. Depends on
@@ -153,14 +167,18 @@ TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
 # survive into this one: if the `test` prerequisite's own FILTER then
 # skips the fixture-writing test, decoding fails loudly on a missing
 # file instead of silently succeeding on last run's payload (review F9).
-.PHONY: view clean-text-dump
+.PHONY: view clean-text-dump clean-title-dump
 clean-text-dump:
 	rm -f $(TEXT_DUMP)
 
-view: clean-text-dump test
+clean-title-dump:
+	rm -f $(TITLE_DUMP)
+
+view: clean-text-dump clean-title-dump test
 	@mkdir -p $(BUILD_DIR)
 	python3 -B tools/fb_view.py $(FIXTURE_DUMP) $(VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TEXT_DUMP) $(TEXT_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(TITLE_DUMP) $(TITLE_VIEWER_PNG)
 
 # Independent PNG-validity oracle (plan §1 Decision, risk R1/R2): confirms
 # a decoder that shares no code with fb_view.py's own reader can open the

@@ -5,12 +5,13 @@
 and watch it on the real ESP32-S3-N16R8 board. `docs/host-tests.md` covers
 everything that *can* run without the board.
 
-`firmware/system/main/app_main.cpp` currently runs the **input-driver**
-harness (`InputReader<GpioInputSource>` + a real `GameSession`, log-only —
-plan.md T9): flashing this build no longer runs the display-driver harness
-that produced v0.2.0's release evidence — that harness is throwaway by
+`firmware/system/main/app_main.cpp` currently runs the **start-screen**
+harness (`drawTitleScreen(fb, session_.state())` pushed to the real panel,
+plan.md T11): flashing this build no longer runs the input-driver harness
+that produced v0.3.0's release evidence — that harness is throwaway by
 construction and its source is preserved verbatim in git history at the
-v0.2.0 tag (input-driver plan.md §5, accepted deliberately).
+v0.3.0 tag, and `input_harness_game.h` stays on disk (start-screen plan.md
+§1 Decision 8/Consequences, the same posture every prior harness swap took).
 
 ## Prerequisites
 
@@ -128,3 +129,66 @@ Per display-driver plan.md §4, exactly:
     effective debounce window at startup (`kDebounceSamples * tick`) —
     copy that line into `qa.md` rather than assuming the `input.h` design
     target (review F2).
+
+`start-screen` needs no hardware split at all for its Musts (T11 plan §1
+Decision 8):
+
+- **Host-CI-verifiable**: AC-1.1–1.6 (pixel-exact layout, ink colour,
+  disjoint bounding boxes, ASan edge safety), AC-2.1–2.3 (disappears on
+  `start`, no flicker while held, determinism) — see `docs/host-tests.md`.
+- **Needs the physical board**: AC-3.1 (the device-dumped screen matches
+  the documented layout) and AC-3.2 (hardware unavailable is recorded, not
+  substituted) — captured below. The panel itself is already wired and
+  proven since v0.2.0, and this harness needs no buttons (a synthetic
+  `start` pulse drives READY → PLAYING after ~3 seconds), so — unlike
+  `input-driver`'s T10 — this one is expected to actually run.
+
+## Capturing an SCFB dump from the serial console (start-screen T11)
+
+The start-screen harness prints each framebuffer once per `GameSession`
+state change (plus the initial READY render) as an SCFB dump
+(`docs/dump-format.md`), hex-encoded between sentinel markers, so it shares
+the same UART as ordinary `ESP_LOGI` lines without those lines' timestamp/
+tag prefix corrupting the hex payload:
+
+```
+SCFB-DUMP-BEGIN
+<hex line 1 (64 hex characters = 32 bytes)>
+<hex line 2>
+...
+SCFB-DUMP-END
+```
+
+1. Flash and attach a monitor per the sections above, and capture its
+   output to a file — e.g. `script -q /tmp/title_screen.log idf.py -p
+   <port> monitor` (see the manual-RESET quirk above; press RESET/EN once
+   the listener is attached).
+2. Let it run past at least one state change (~3 seconds at the
+   `kSyntheticStartAtTick`/`kTickDelayMs` values `title_screen_harness_game.h`
+   and `app_main.cpp` document) so both the READY and PLAYING screens are
+   captured, then stop the capture.
+3. Decode **both** dumps from the one captured transcript — `--which
+   first` for the earliest block (READY), the default `--which last` for
+   the most recent (PLAYING) (review F2: earlier revisions of this doc
+   always decoded the last block, which is the wrong one for confirming
+   the READY screen this step needs):
+
+   ```
+   python3 tools/scfb_capture.py /tmp/title_screen.log /tmp/title_screen_ready.scfb --which first
+   python3 tools/scfb_capture.py /tmp/title_screen.log /tmp/title_screen_playing.scfb
+   ```
+
+   `scfb_capture.py` extracts every complete `BEGIN`/`END` block, rejects
+   any whose byte count disagrees with its own header (a truncated capture)
+   rather than decoding it partially, and prints how many valid blocks it
+   found either way.
+4. View both exactly like any other dump:
+
+   ```
+   python3 tools/fb_view.py /tmp/title_screen_ready.scfb /tmp/title_screen_ready.png
+   python3 tools/fb_view.py /tmp/title_screen_playing.scfb /tmp/title_screen_playing.png
+   ```
+5. Confirm the READY image shows `STEAMCORE` at `(84, 48)` and
+   `PRESS START` at `(76, 112)` with the rest black, and the PLAYING image
+   is fully black (AC-3.1) — and that the physical panel shows the same
+   two screens and blanks when the synthetic `start` pulse fires.

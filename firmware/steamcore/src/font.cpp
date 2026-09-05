@@ -1,6 +1,8 @@
 #include "steamcore/font.h"
 
 #include <array>
+#include <cstddef>
+#include <cstdlib>
 
 namespace steamcore {
 
@@ -494,16 +496,42 @@ constexpr Color kOffMarker = Color::BLACK;
 // any explicit check.
 constexpr bool rowIsExactWidth(const char* row) { return row[kGlyphWidth] == '\0'; }
 
-// Throwing here is what turns "bad glyph art" into a compile error: a
-// throw-expression is never a constant expression, so a build that hits
-// this line fails instead of silently baking in wrong pixels.
+// A non-constexpr function: calling it during constant evaluation is not
+// a constant expression, so hitting it below fails the BUILD -- "bad
+// glyph art becomes a compile error" without relying on C++ exceptions.
+// This file's own kAtlas is a `constexpr` global (below), so
+// buildAtlas()/glyphPixel() only ever run at compile time; the infinite
+// loop below can therefore never actually execute -- a genuinely bad
+// glyph row is caught at compile time, before this body would ever run.
+// Given a real, out-of-line body (rather than left declared-only) so
+// host clang's `-Wundefined-internal` (an internal-linkage function
+// that's declared but never defined is an error under -Werror) doesn't
+// trip on a function that must never actually execute. The original
+// throw-based version of this check relied on exceptions, which host
+// clang/g++ never disable but ESP-IDF's device build does
+// (-fno-exceptions) -- undiscovered until font.cpp was first compiled
+// for the device (start-screen T11; deviation logged in
+// .spark/start-screen/plan.md).
+//
+// review F6: an empty `for (;;) {}` has no side effect and no observable
+// forward progress, so it is undefined behaviour under C++17
+// [intro.progress]p1 -- a compiler is free to assume it never executes
+// and optimise it away entirely, which would silently remove the one
+// thing standing between bad glyph art and undefined pixels if this
+// function's unreachability analysis were ever wrong. std::abort() has
+// defined behaviour (immediate program termination) and is available on
+// both the host and ESP-IDF toolchains.
+[[noreturn]] void reportInvalidGlyphArt() { std::abort(); }
+
 constexpr Color glyphPixel(const char* row, int32_t col) {
   if (!rowIsExactWidth(row)) {
-    throw "glyph row is not exactly kGlyphWidth characters wide";
+    reportInvalidGlyphArt();
+    return Color::BLACK;
   }
   if (row[col] == '#') return kOnMarker;
   if (row[col] == ' ') return kOffMarker;
-  throw "glyph row contains a character that is neither ' ' nor '#'";
+  reportInvalidGlyphArt();
+  return Color::BLACK;
 }
 
 constexpr std::array<Color, kAtlasPixelCount> buildAtlas() {

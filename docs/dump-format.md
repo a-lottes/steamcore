@@ -6,12 +6,42 @@ decoded off-device into a viewable image. It exists because rendering-core
 proved the engine's logic entirely through unit-test assertions — nobody
 has ever looked at a frame it produced. See constitution §4/§8.
 
-**Non-goal:** this document defines a *file* format only. It says nothing
-about how those bytes might one day travel over a wire (USB-CDC framing,
-sync bytes, a checksum, a baud rate). That is explicitly out of scope
-here and belongs to a future device-side story, once ESP-IDF and a wired
-panel exist. A framing layer can wrap this format later without changing
-it — see the version field below.
+**Non-goal:** this document defines a *file* format only — it says nothing
+about how those bytes get from a file on disk to a decoder. The wire
+framing used to move them over a live serial console (as opposed to the
+committed fixture file, read directly from disk) is a separate, additive
+layer, recorded in the next section now that ESP-IDF and a wired panel
+both exist.
+
+## Wire framing over a live serial console (start-screen T11)
+
+The file format above never changes for this. What's new is only how one
+dump's bytes get read off a live UART that also carries ordinary
+`ESP_LOGI` lines: the on-device harness
+(`firmware/system/main/app_main.cpp`) hex-encodes the dump (2 ASCII hex
+characters per byte, 32 bytes / 64 hex characters per line) and brackets
+it with two sentinel lines, printed via a raw `printf` (never `ESP_LOGI`,
+whose own timestamp/tag prefix would otherwise land inside the hex
+payload):
+
+```
+SCFB-DUMP-BEGIN
+<hex line 1>
+<hex line 2>
+...
+SCFB-DUMP-END
+```
+
+`tools/scfb_capture.py` reads a captured transcript, finds every complete
+`BEGIN`/`END` block (matching the markers as a line *suffix* so a line
+still carrying a log prefix is recognised), and validates each one against
+this document's own file-format rules before accepting it: the decoded
+byte count must equal `10 + width * height` from the block's own header,
+exactly the same check `fb_view.py` already performs on a file read from
+disk. A block that fails this check — a capture stopped mid-dump, for
+example — is rejected outright, never decoded partially, matching the
+"Reading this format" contract above. See `docs/device-build.md` for the
+full capture walkthrough.
 
 ## Byte layout
 
