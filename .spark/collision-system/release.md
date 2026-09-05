@@ -5,22 +5,22 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 1), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.5.0 (proposed, not yet tagged) |
+| **Status** | `released` |
+| **Version** | v0.5.0 |
 | **Date** | 2026-09-05 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, fresh pre-flight green (host
-  only, re-run just now on the working tree that will become the release
-  commit). Explicitly **prepare-only**: no `git add`/`commit`/`tag` executed,
-  no push. Everything below is drafted and ready to run on the caller's go.
+- **Status:** `released` — both gates green, pre-flight re-run fresh at
+  prepare time and reproduced again post-tag (this section). Commit
+  `b203a14652e0cd655ca80b95705c33b574f157ad` tagged `v0.5.0`. No push/PR/
+  deploy exist for this project (direct mode, no remote) — local commit +
+  tag is the entire publish action, both executed on explicit caller go.
 - **Summary:** Adds `Entity`, `overlaps()`, `checkCollision()` and the
   optional `sweepCollisions()` — the AABB collision primitive every roadmap
   game needs. Pure host-only addition; nothing player-visible changes yet
   (no game exists that uses it).
-- **Open:** `1 outstanding` — the commit/tag/staging commands are drafted in
-  §3 but not run; awaiting the caller's explicit go to execute them. Nothing
-  from review/QA is open (both 0 Blockers/Majors).
+- **Open:** none. The one item open at prepare time (commit/tag/smoke-check
+  execution) is done; both gates were already 0 Blockers/Majors.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below.
 - **On conflict:** the numbered body below wins for everything except
   `Status`/`Version`; log the mismatch at the next `/go-live` and proceed.
@@ -63,17 +63,47 @@
       exit 0, identical results to above. This feature has **no device-side
       component at all** (plan §2/§4, deliberate): `git diff --exit-code
       HEAD -- firmware/system/` is empty, so no `idf.py build` step applies.
-- [ ] No uncommitted changes in the working tree — **not yet true, by
-      design**: this is prepare-only, nothing has been committed. `git
-      status` re-checked immediately before writing this report and
-      reconciled against §3's file list below: every modified/untracked path
-      belongs to one of two buckets — this feature's diff (§3), or three
-      pre-existing, unrelated items (`.spark/start-screen/release.md`,
-      `CLAUDE.md`, `assets/{Buttons.png,fonts/,sprites/}`) that predate this
-      feature and stay untouched by it. No drift, nothing unaccounted for.
+- [x] No uncommitted changes belonging to this feature — **true as of the
+      release commit** `b203a1465`: `git diff --stat HEAD` shows only the
+      three pre-existing, unrelated items already named below, nothing from
+      this feature's diff.
 - Five existing engine types confirmed byte-identical to `HEAD` (A8/C4):
   `git diff --exit-code HEAD -- game_loop.h game_state.{h,cpp} input.h
   framebuffer.{h,cpp} sprite.h` → empty.
+
+## 1b. Post-Release Smoke Check (re-run on the tagged commit)
+
+*Executed on the explicit caller go, on commit `b203a1465` / tag `v0.5.0`,
+right after tagging — not copied from §1.*
+
+- [x] `make test-all`: exit 0.
+- [x] `make test` (clang): **197 passed, 0 failed** — matches §1.
+- [x] `make test-asan`: **197 passed, 0 failed** — matches §1.
+- [x] `make test-gcc`: **197 passed, 0 failed** — matches §1.
+- [x] `make test-negative`: both harness self-check cases reported OK —
+      matches §1.
+- [x] `make bench`: all 5 binaries **BENCH OK**. `overlaps()` 5.42 ns/call
+      (8M pairs, doubling ratio 1.84x); `sweepCollisions()` 0.96 µs/sweep (32
+      entities, 400K passes, ratio 1.99x) — both still ≪ the 1.6667 ms sweep
+      budget. Small deltas from §1's 5.43 ns / 1.00 µs / 1.98x / 2.09x are
+      ordinary run-to-run timing noise on the same hardware, not a
+      regression — same conclusion (comfortably under budget, ~doubling
+      scaling) both times.
+- [x] `make test-python`: **31/31**, `make test-roundtrip`: **2/2**,
+      `test-png-external`: OK — all match §1.
+- [x] `make lint`: **OK**, 0 violations. Discrepancy noted honestly rather
+      than silently reconciled: the script (`tools/check_constraints.sh`)
+      currently defines **29** rule blocks, not the 28 §1 cites — a
+      pre-existing wording miscount in this report's own §1 (all 29 ran and
+      passed both times; no rule was added or removed between prepare-time
+      and now, `git diff --stat HEAD -- tools/check_constraints.sh` is
+      empty). Functionally identical outcome (lint clean); only the prose
+      count in §1 was off by one.
+
+**Conclusion:** the tagged commit reproduces the same green result recorded
+at pre-flight — same pass counts everywhere, same lint outcome, bench numbers
+within ordinary measurement noise and still far under budget. Nothing
+regressed between prepare and publish.
 
 ## 2. Changelog
 
@@ -97,17 +127,17 @@ lands invisibly until the first roadmap game uses it (spec §2).
 
 ## 3. Release Actions
 
-*Prepared, not executed. Direct mode, no remote — the two pending local
-commands below (`git add` + `git commit`, then `git tag -a`) are the entire
-publish action for this project; no push, no PR, no deploy exist for it.*
+*Executed on the caller's explicit go. Direct mode, no remote — the two
+local commands below are the entire publish action for this project; no
+push, no PR, no deploy exist for it.*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Pending — drafted, not run.** Proposed **v0.5.0**. Tag command drafted: `git tag -a v0.5.0 -m "collision-system: AABB overlap detection and callback dispatch for future games; host-only, no device component" <commit>` (commit hash filled in once §3's commit is made). |
-| Commit | **Pending — drafted, not run.** Staging: explicit `git add <path>` per file in the list below, never `-A`/`.`. Message: `feat: add collision system — AABB overlap detection and callback dispatch for future games` + Co-Authored-By trailer (matching this repo's convention, `git log`). |
+| Version bump & tag | **Done.** `v0.5.0`. `git tag -a v0.5.0 -m "collision-system: AABB overlap detection and callback dispatch for future games; host-only, no device component" b203a14652e0cd655ca80b95705c33b574f157ad` |
+| Commit | **Done.** Commit `b203a14652e0cd655ca80b95705c33b574f157ad`, message `feat: add collision system — AABB overlap detection and callback dispatch for future games` + `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer (matches this repo's convention). Staged via explicit `git add <path>` per file, never `-A`/`.`. |
 | PR / merge | N/A — `direct` mode, no remote configured. |
 | Deploy | N/A for this feature specifically — no device-side component exists (plan §2/§4, deliberate); nothing is flashed or pushed anywhere by this release. |
-| Post-release smoke check | **Pending.** Once tagged: re-run `make test-all` against the tagged commit and confirm every §1 number reproduces exactly — same pattern as every prior release. |
+| Post-release smoke check | **Done** — see §1b. Same green result as pre-flight, reproduced on the tagged commit. |
 
 **Version justification.** Continues this project's normal `v0.x.0`
 sequence from `v0.4.0` (start-screen). **Minor** bump: purely additive — one
@@ -118,8 +148,9 @@ functionality, not a bug fix); not a MAJOR (nothing removed or resignatured).
 Every prior same-day full-loop feature in this project's history landed as a
 minor bump too — no reason found to deviate.
 
-**Exact file list to stage (never `-A`/`.`), reconciled against a fresh
-`git status` run immediately before this report:**
+**Exact file list staged (never `-A`/`.`), matched against a fresh
+`git status` immediately before staging — one drift item found and excluded,
+see below:**
 - Modified: `Makefile`, `docs/host-tests.md`, `tools/check_constraints.sh`
 - New: `.spark/collision-system/spec.md`, `plan.md`, `review.md`, `qa.md`,
   `release.md` (this file), `firmware/steamcore/include/steamcore/collision.h`,
@@ -129,20 +160,26 @@ minor bump too — no reason found to deviate.
   `firmware/steamcore/test/collision_sweep_test.cpp`,
   `firmware/steamcore/test/bench_collision.cpp`
 
-**Explicitly excluded — pre-existing, unrelated, confirmed by `git status`
-reconciliation:** `.spark/start-screen/release.md` (unrelated prior-session
-edit), `CLAUDE.md` (two learnings sections added after start-screen's
-release, unrelated to this feature), `assets/Buttons.png`, `assets/fonts/`,
-`assets/sprites/` (untracked, from a different in-progress effort, not
-referenced anywhere by collision-system).
+**Explicitly excluded — pre-existing or unrelated, confirmed by a fresh
+`git status --short` immediately before staging:** `.spark/start-screen/
+release.md` (unrelated prior-session edit), `CLAUDE.md` (learnings sections
+added after start-screen's release, unrelated to this feature),
+`assets/Buttons.png`, `assets/fonts/`, `assets/sprites/` (untracked, from a
+different in-progress effort). **New since the prepare-time snapshot:**
+`.spark/analog-joystick-input/` (untracked directory containing only
+`spec.md`) had appeared by execution time — a different, later feature's
+spec draft with no plan/review/qa yet, unrelated to collision-system and not
+referenced anywhere by it. Named here per this project's own standing
+practice (CLAUDE.md, "re-check `git status` before staging a release") and
+excluded from staging rather than assumed away.
 
 **Rollback path** (local-only; `git remote -v` is empty, nothing to unwind
 remotely):
-- Not yet committed: nothing to roll back — declining the go simply leaves
-  the working tree as-is; no destructive command has run.
-- Once committed/tagged and found wrong: `git tag -d v0.5.0` (tag exists →
-  delete first), then `git reset --soft HEAD~1` — restores every file to the
-  working tree, nothing lost.
+- Committed and tagged as `b203a14652e0cd655ca80b95705c33b574f157ad` /
+  `v0.5.0`. If found wrong: `git tag -d v0.5.0` (delete the tag first), then
+  `git reset --soft HEAD~1` — restores every file to the working tree,
+  nothing lost, and re-exposes the untracked/modified state exactly as it
+  was pre-commit.
 - Tag wrong but commit fine: `git tag -d v0.5.0` only, then re-tag once
   corrected.
 
@@ -156,7 +193,11 @@ remotely):
   produced zero actual collisions across 8M measured pairs (review F3, open
   Minor) — a representative benchmark should assert a nonzero hit rate on
   itself, not just a doubling ratio, so a degenerate workload fails loudly
-  instead of shipping a best-case-only number.
+  instead of shipping a best-case-only number. Also: this report's own §1
+  miscounted the lint rule total by one (28 vs the actual 29) — a prose
+  count copied by hand rather than derived from the script is exactly the
+  kind of thing that silently drifts; worth generating that number from
+  `tools/check_constraints.sh` itself next time instead of typing it.
 - **Patterns worth reusing:** proving a numeric safety claim twice —
   `constexpr`/`static_assert` at compile time plus a `volatile`-laundered
   UBSan case at run time — makes an overflow guarantee fail in two
@@ -170,19 +211,19 @@ remotely):
 *All boxes checked → the loop is closed. The feature is done-done.*
 
 - [x] All pre-flight checks passed at release time — full suite green fresh
-      (197/197 x3, lint clean, bench OK, python/roundtrip/png-external OK,
-      clean-state rebuild green); one box intentionally unchecked (no
-      uncommitted-changes state yet, since nothing has been committed —
-      expected for prepare-only)
+      at prepare time (197/197 x3, lint clean, bench OK, python/roundtrip/
+      png-external OK, clean-state rebuild green), and reproduced again
+      post-tag on the actual released commit (§1b): same pass counts, same
+      lint outcome, bench within ordinary noise, no uncommitted changes
+      belonging to this feature.
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified — **not executed**: commit, tag
-      and post-release smoke check are all drafted and pending the caller's
-      explicit go; nothing outward-facing or irreversible has run
+- [x] Release actions executed and verified — commit `b203a1465`, tag
+      `v0.5.0`, and the post-release smoke check are all done (§3, §1b); no
+      push/PR/deploy exist for this project (direct mode, no remote).
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 132 / Soll ~100 — 32 over; reason: the
-      explicit never-`-A` file list, the version justification paragraph and
-      the dual gate-recap in §0 (same overage class as `input-driver`'s and
-      `start-screen`'s releases)
-- [ ] Status set to `released` — **not set**; status is `preparing`,
-      awaiting the caller's go to run the pending commands in §3. Nothing
-      here reads as shipped.
+- [x] Line budget respected: Ist 152 / Soll ~100 — 52 over; reason: added
+      §1b (post-release smoke check detail) plus the drift-item and
+      lint-miscount write-ups on top of the existing overage class (explicit
+      never-`-A` file list, version justification, dual gate-recap in §0)
+      already flagged in `input-driver`'s and `start-screen`'s releases
+- [x] Status set to `released`
