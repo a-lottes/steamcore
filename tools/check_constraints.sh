@@ -510,6 +510,72 @@ fi
 # reaches it, and it has no timing/RNG dependency to guard in the first
 # place.
 
+COLLISION_DETERMINISM_FILES="$INCLUDE_DIR/steamcore/collision.h $TEST_DIR/collision_test.cpp $TEST_DIR/collision_overflow_test.cpp $TEST_DIR/collision_dispatch_test.cpp $TEST_DIR/collision_sweep_test.cpp"
+# bench_collision.cpp is deliberately NOT in the determinism list above,
+# the same exemption bench_game_loop.cpp already has above: measuring
+# elapsed time with <chrono> is that file's entire legitimate purpose.
+# It IS added to the alloc-only list below -- a benchmark has no more
+# reason to allocate than the mechanism it measures.
+COLLISION_ALLOC_FILES="$COLLISION_DETERMINISM_FILES $TEST_DIR/bench_collision.cpp"
+
+echo "--- no wall-clock read or unseeded RNG in the collision mechanism (collision-system NFR-5) ---"
+# overlaps()/checkCollision()/sweepCollisions() are pure functions of
+# their arguments (collision-system A6/NFR-5) -- a clock or unseeded RNG
+# anywhere in this file set would make collision detection depend on
+# something other than the entities it was given.
+for f in $COLLISION_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected collision-system file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the collision-system determinism guarantee (NFR-5) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the collision-system file set (NFR-2, extends the include/src grep to test/; also automates half of AC-2.4) ---"
+# This pattern already matches std::function -- AC-2.4 forbids
+# std::function-based dispatch, so this same rule doubles as that ban's
+# automated half, not merely the general allocation guard every other
+# feature's test/ files get.
+for f in $COLLISION_ALLOC_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected collision-system file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type (including std::function, AC-2.4) was found above, in the collision-system file set"
+  fi
+done
+
+echo "--- Entity's four-field size guard is present (collision-system R4) ---"
+# Presence, not correctness -- guards A1's "no ID/velocity/user-data"
+# against silently acquiring a fifth field (or a virtual member, which
+# would also change sizeof).
+if [ ! -f "$INCLUDE_DIR/steamcore/collision.h" ]; then
+  report "expected collision-system file '$INCLUDE_DIR/steamcore/collision.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nE 'static_assert[[:space:]]*\([[:space:]]*sizeof[[:space:]]*\([[:space:]]*Entity[[:space:]]*\)[[:space:]]*==[[:space:]]*4[[:space:]]*\*[[:space:]]*sizeof[[:space:]]*\([[:space:]]*int32_t[[:space:]]*\)' \
+      "$INCLUDE_DIR/steamcore/collision.h" | grep -qvE '^[0-9]+:[[:space:]]*//'; then
+    report "the static_assert(sizeof(Entity) == 4 * sizeof(int32_t)) size guard was not found in collision.h -- it must not be deleted silently"
+  fi
+fi
+
+echo "--- collision.h still widens to int64_t (collision-system R6, presence only) ---"
+# Presence, not correctness -- T3/T4's host tests are what actually prove
+# the widening is correct; this only guards against the keyword/type
+# disappearing silently, the same posture as the size-guard check above.
+if [ ! -f "$INCLUDE_DIR/steamcore/collision.h" ]; then
+  report "expected collision-system file '$INCLUDE_DIR/steamcore/collision.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nF 'int64_t' "$INCLUDE_DIR/steamcore/collision.h" \
+      | grep -qvE '^[0-9]+:[[:space:]]*//'; then
+    report "int64_t was not found in collision.h -- the widen-before-summing overflow guard (AC-1.7) must not be deleted silently"
+  fi
+fi
+
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather
 # than trusting a list of known-bad packages we might not think of

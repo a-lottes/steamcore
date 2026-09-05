@@ -51,6 +51,7 @@ BENCH_BIN := $(BUILD_DIR)/steamcore_bench
 TEXT_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_text
 GAME_LOOP_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_game_loop
 TITLE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_title_screen
+COLLISION_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_collision
 
 # Every binary target below is itself .PHONY: its recipe runs on EVERY
 # invocation, unconditionally, regardless of any file mtime. This host
@@ -62,7 +63,7 @@ TITLE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_title_screen
 # takes ~1.3s, which is cheap enough that giving up incremental caching
 # entirely is the right trade for a gate that must never report success
 # on code it did not actually just compile.
-.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN)
+.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN)
 
 .PHONY: test
 test: $(TEST_BIN)
@@ -127,11 +128,12 @@ test-gcc:
 	$(MAKE) test CXX=g++
 
 .PHONY: bench
-bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN)
+bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN)
 	$(BENCH_BIN)
 	$(TEXT_BENCH_BIN)
 	$(GAME_LOOP_BENCH_BIN)
 	$(TITLE_BENCH_BIN)
+	$(COLLISION_BENCH_BIN)
 
 $(BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
@@ -148,6 +150,10 @@ $(GAME_LOOP_BENCH_BIN):
 $(TITLE_BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_title_screen.cpp
+
+$(COLLISION_BENCH_BIN):
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_collision.cpp
 
 VIEWER_PNG := $(BUILD_DIR)/pattern.png
 TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
