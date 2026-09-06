@@ -48,4 +48,29 @@ inline constexpr int kPinInputStart = 15;
 inline constexpr int kPinInputFire = 17;
 inline constexpr int kPinInputSelect = 18;
 
+// analog-joystick-input (T4): a SECOND, mutually exclusive control
+// scheme -- this project wires either the seven kPinInput* switches
+// above or these five pins, never both at once (docs/wiring-analog-
+// joystick.md). Two discrete digital buttons plus the joystick's own
+// integrated click, and an analog joystick's two potentiometer axes.
+// kPinJoystickVrx/Vry must sit on an ADC1-capable pin (GPIO1-10 on this
+// chip); only 1, 2 and 8 are free there once GPIO9/10 (display) and
+// GPIO4-7 (kPinInput* above) are excluded -- GPIO3 is boot-strapping.
+// The three digital pins (Sw/Start/Fire) can be any free GPIO: chosen
+// to avoid GPIO9-14 (display), GPIO4-7/15/17/18 (kPinInput* above, so
+// the two schemes never double-book a pin), GPIO26-37 (octal PSRAM/
+// flash on this chip variant), the boot-strapping pins 0/3/45/46,
+// GPIO19/20 (native USB D-/D+), GPIO43/44 (UART0), GPIO38/48 (the
+// onboard RGB LED, which pin depends on the DevKitC-1 revision), GPIO
+// 39-42 (JTAG, already avoided by kPinInput* above), and GPIO16
+// (tools/check_constraints.sh's tile-size-literal rule bans a bare `16`
+// in include/ outside config.h). The ADC unit/channel for Vrx/Vry is
+// derived at init time via ESP-IDF's adc_oneshot_io_to_channel(), never
+// written down as a second literal here.
+inline constexpr int kPinJoystickVrx = 1;    // ADC1_CH0
+inline constexpr int kPinJoystickVry = 2;    // ADC1_CH1
+inline constexpr int kPinJoystickSw = 21;    // -> select
+inline constexpr int kPinJoystickStart = 47;  // Taster 1 -> start
+inline constexpr int kPinJoystickFire = 8;    // Taster 2 -> fire
+
 }  // namespace steamcore

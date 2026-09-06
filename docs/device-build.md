@@ -5,13 +5,47 @@
 and watch it on the real ESP32-S3-N16R8 board. `docs/host-tests.md` covers
 everything that *can* run without the board.
 
-`firmware/system/main/app_main.cpp` currently runs the **start-screen**
-harness (`drawTitleScreen(fb, session_.state())` pushed to the real panel,
-plan.md T11): flashing this build no longer runs the input-driver harness
-that produced v0.3.0's release evidence — that harness is throwaway by
-construction and its source is preserved verbatim in git history at the
-v0.3.0 tag, and `input_harness_game.h` stays on disk (start-screen plan.md
-§1 Decision 8/Consequences, the same posture every prior harness swap took).
+`firmware/system/main/app_main.cpp` currently runs the
+**analog-joystick-input** harness (plan.md T7): drives the real
+`AnalogJoystickSource` through the completely unmodified
+`InputReader<Source>`, logging raw ADC samples and button presses over
+serial — no panel, no `GameLoop`, nothing drawn. Flashing this build no
+longer runs the start-screen harness that produced v0.4.0's release
+evidence — that harness is throwaway by construction and its source is
+preserved verbatim in git history at the v0.4.0 tag (commit `a8e590f`), and
+`title_screen_harness_game.h` stays on disk (the same posture every prior
+harness swap took, most recently start-screen plan.md §1 Decision 8).
+
+## Reading the analog-joystick harness log
+
+Every tick (20 ms, `kTickDelayMs`), one line reports both axes' raw ADC
+counts alongside all four derived direction booleans:
+
+```
+I (1234) analog_joystick_harness: axes: rawX=2047 rawY=2047 up=0 down=0 left=0 right=0
+```
+
+`rawX`/`rawY` are the last successfully read ADC counts (0–4095, or the
+previous value held over if that tick's read failed) — a *wired*, centred
+stick reads at or near 2047 with all four booleans 0. Two cases that are
+**not** 2047 and are easy to misread as a full deflection: if
+`init()` failed, or before the very first successful read, no ADC read
+happens at all and both counters stay at their initial `0` while every
+boolean still reads 0 (never the `left`/`up` a raw 0 would otherwise
+imply) — the `ADC init failed` error line at startup is what tells the two
+apart. An ADC pin with nothing connected to it floats and drifts rather
+than resting at any particular value. `start`/`fire`/`select` log only on
+a debounced change, not every tick:
+
+```
+I (2000) analog_joystick_harness: start: pressed
+I (2100) analog_joystick_harness: start: released
+```
+
+If `AnalogJoystickSource::init()` fails (no ADC available), the harness
+logs that once at startup and every direction boolean stays 0 forever —
+the three buttons still work independently, per the fail-safe policy
+`analog_joystick_source.h`'s own contract documents.
 
 ## Prerequisites
 

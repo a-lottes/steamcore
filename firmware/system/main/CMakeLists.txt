@@ -23,6 +23,7 @@ idf_component_register(
          "../../steamcore/src/dump_format.cpp"
          "../../steamcore/port/esp32/ili9488_display.cpp"
          "../../steamcore/port/esp32/gpio_input_source.cpp"
+         "../../steamcore/port/esp32/analog_joystick_source.cpp"
     INCLUDE_DIRS "." "../../steamcore/include" "../.."
-    REQUIRES driver esp_timer
+    REQUIRES driver esp_timer esp_adc
 )

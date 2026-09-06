@@ -1,123 +1,76 @@
-// start-screen T11: the on-device proof for AC-3.1/AC-3.2 -- an
-// unmodified drawTitleScreen(fb, session_.state()) pushed to the real,
-// already-wired ILI9488 panel (v0.2.0), with a synthetic `start` pulse
-// driving READY -> PLAYING so the disappearance US-2 exists for is
-// observable with no buttons wired. Every state change (and the initial
-// READY render) also emits the framebuffer as an SCFB dump over the
-// serial console, hex-encoded between sentinel markers, so
-// tools/scfb_capture.py can turn a captured transcript into a real
-// decodable .scfb file -- constitution §8's declared substitute
-// verification method, made enforceable on device for the first time.
+// analog-joystick-input T7: the buildable half of US-3's on-device
+// confirmation -- drives the real AnalogJoystickSource through the
+// completely unmodified InputReader<Source>, ticking at a fixed,
+// documented interval. Nothing needs to be physically wired to build and
+// flash this: every direction reads permanently neutral until
+// AnalogJoystickSource::init() actually finds a working ADC, and every
+// button reads unpressed until the pins are connected
+// (docs/wiring-analog-joystick.md) -- T8 is where a human at the real
+// controls confirms the rest.
 //
-// This overwrites input-driver's still-blocked T10 harness: harnesses
-// are throwaway by construction (spec NFR-6/A13, the same posture this
-// project has taken every time), input-driver is already released at
-// v0.3.0, and git history plus input_harness_game.h (left on disk)
-// preserve it.
+// This overwrites start-screen's T11 harness: harnesses are throwaway by
+// construction (spec A12/NFR-6, the same posture every prior harness swap
+// took), start-screen is already released at v0.4.0 (commit a8e590f, tag
+// v0.4.0), and git history plus title_screen_harness_game.h (left on
+// disk) preserve it.
 
 #include <cstdio>
-#include <cstdlib>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "steamcore/dirty_tracker.h"
-#include "steamcore/dump_format.h"
-#include "steamcore/framebuffer.h"
-#include "steamcore/game_loop.h"
-#include "steamcore/port/esp32/ili9488_display.h"
-#include "title_screen_harness_game.h"
+#include "steamcore/input.h"
+#include "steamcore/port/esp32/analog_joystick_source.h"
 
 namespace {
-constexpr char kLogTag[] = "start_screen_main";
 
-// Not a timing claim (NFR-3) -- how often this harness calls tick().
+constexpr char kLogTag[] = "analog_joystick_harness";
+
+// Not a timing claim (NFR-3) -- how often this harness calls read().
 constexpr uint32_t kTickDelayMs = 20;
 
-// Hex-encodes and prints `fb` between sentinel markers so
-// tools/scfb_capture.py can extract it from a captured serial transcript.
-// Uses raw printf, not ESP_LOGI, for every payload line: ESP_LOGI's own
-// timestamp/tag prefix would land inside what must otherwise be pure hex
-// characters. 32 bytes (64 hex characters) per line -- long enough to
-// keep the total line count manageable, short enough to stay well under
-// any serial console's line-length limit.
-//
-// Found on real hardware (T12): ~1,200 lines printed back-to-back with no
-// yield starves the idle task long enough to trip the task watchdog
-// (default 5 s) mid-dump, which then interleaves a watchdog backtrace
-// into the middle of the hex payload -- exactly the "non-hex noise inside
-// a block" case tools/scfb_capture.py is built to reject, so it silently
-// discarded the whole corrupted capture rather than mis-decoding it (the
-// tool did its job; the harness had the bug). Fixed with a periodic
-// vTaskDelay, letting the idle task run and feed the watchdog.
-void dumpFramebufferOverSerial(const steamcore::Framebuffer& fb) {
-  using steamcore::kDumpHeaderSize;
-  using steamcore::serializeDump;
-
-  constexpr size_t kBufferCapacity =
-      kDumpHeaderSize + static_cast<size_t>(steamcore::Framebuffer::width()) *
-                             steamcore::Framebuffer::height();
-  static uint8_t buffer[kBufferCapacity];
-  const size_t written = serializeDump(fb, buffer, sizeof(buffer));
-  if (written != kBufferCapacity) {
-    ESP_LOGE(kLogTag, "serializeDump failed: wrote %d, expected %d",
-             static_cast<int>(written), static_cast<int>(kBufferCapacity));
-    return;
-  }
-
-  constexpr size_t kBytesPerLine = 32;
-  char hexLine[kBytesPerLine * 2 + 1];
-
-  constexpr int32_t kLinesPerYield = 20;
-  int32_t lineCount = 0;
-
-  std::printf("SCFB-DUMP-BEGIN\n");
-  for (size_t offset = 0; offset < written; offset += kBytesPerLine) {
-    const size_t lineBytes =
-        (written - offset) < kBytesPerLine ? (written - offset) : kBytesPerLine;
-    for (size_t i = 0; i < lineBytes; ++i) {
-      std::snprintf(&hexLine[i * 2], 3, "%02x", buffer[offset + i]);
-    }
-    hexLine[lineBytes * 2] = '\0';
-    std::printf("%s\n", hexLine);
-
-    if (++lineCount % kLinesPerYield == 0) {
-      vTaskDelay(1);
-    }
-  }
-  std::printf("SCFB-DUMP-END\n");
+void logLevelChange(const char* name, bool previous, bool current) {
+  if (previous == current) return;
+  ESP_LOGI(kLogTag, "%s: %s", name, current ? "pressed" : "released");
 }
+
 }  // namespace
 
 extern "C" void app_main() {
-  ESP_LOGI(kLogTag, "start-screen T11: title screen harness, tick=%dms",
+  ESP_LOGI(kLogTag, "analog-joystick-input T7: harness, tick=%dms",
            static_cast<int>(kTickDelayMs));
 
-  static steamcore::port::esp32::Ili9488Display display;
-  static steamcore::Framebuffer fb;
-  static steamcore::DirtyTracker tracker;
-  static steamcore::test::TitleScreenHarnessGame game;
+  static steamcore::port::esp32::AnalogJoystickSource source;
+  static steamcore::InputReader<steamcore::port::esp32::AnalogJoystickSource>
+      reader;
 
-  if (!display.init()) {
-    ESP_LOGE(kLogTag, "init failed, halting");
-    std::abort();
+  if (!source.init()) {
+    ESP_LOGE(kLogTag,
+             "ADC init failed -- directions will read neutral forever; "
+             "start/fire/select keep working regardless");
   }
 
-  // GameLoop<Game>'s unmodified, already-shipped public signature -- no
-  // change to game_loop.h.
-  steamcore::GameLoop<steamcore::test::TitleScreenHarnessGame> loop(game, fb);
+  ESP_LOGI(kLogTag,
+           "harness running -- move the stick and press the buttons");
 
-  ESP_LOGI(kLogTag, "harness running -- watch the panel, no buttons needed");
+  steamcore::GameInput previous{};
   for (;;) {
-    loop.tick(steamcore::GameInput{});
-    display.pushDirty(fb, tracker);
-    if (game.consumeStateChanged()) {
-      ESP_LOGI(kLogTag, "state=%s, dumping framebuffer over serial",
-               game.state() == steamcore::GameState::READY ? "READY"
-               : game.state() == steamcore::GameState::PLAYING ? "PLAYING"
-                                                                 : "GAME_OVER");
-      dumpFramebufferOverSerial(fb);
-    }
+    const steamcore::GameInput input = reader.read(source);
+
+    // NFR-5: every tick, each axis' raw ADC sample beside its derived
+    // direction booleans -- continuous visibility for a human watching
+    // the stick move, unlike the three buttons below, which log only on
+    // change.
+    ESP_LOGI(kLogTag, "axes: rawX=%d rawY=%d up=%d down=%d left=%d right=%d",
+             static_cast<int>(source.lastRawX()),
+             static_cast<int>(source.lastRawY()), input.up, input.down,
+             input.left, input.right);
+
+    logLevelChange("start", previous.start, input.start);
+    logLevelChange("fire", previous.fire, input.fire);
+    logLevelChange("select", previous.select, input.select);
+    previous = input;
+
     vTaskDelay(pdMS_TO_TICKS(kTickDelayMs));
   }
 }

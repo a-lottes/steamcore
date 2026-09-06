@@ -411,10 +411,13 @@ echo "--- no GPIO literal outside board_config.h (display-driver, constitution ย
 # prevent: a second, drifting copy of a pin assignment. board_config.h
 # itself is where these numbers are legitimately defined, so it's
 # excluded. input-driver (T7) extended the digit set from 9-14 (display
-# only) to also cover 4/5/6/7/15/17/18 (input); re-run against the
-# unmodified tree with the extended set first to confirm zero false
-# positives, per this rule's own "narrow the token pattern, never drop a
-# digit" posture.
+# only) to also cover 4/5/6/7/15/17/18 (input); analog-joystick-input
+# (T6) extends it again to also cover 8/21/47 (its three digital
+# pins) -- re-run against the unmodified tree with each extended set
+# first to confirm zero false positives, per this rule's own "narrow the
+# token pattern, never drop a digit" posture. VRX/VRY's own pins (1, 2)
+# do NOT join this global set -- see the feature-scoped block below for
+# why.
 GPIO_TOKEN_PATTERN='(gpio|spi|io_num|[Pp]in)'
 # The digit match runs against the LINE CONTENT only, and treats `_` as a
 # token separator. Both were found wrong at review, in opposite
@@ -438,14 +441,14 @@ if grep -rnE --include='*.h' --include='*.cpp' "$GPIO_TOKEN_PATTERN" \
       {
         content = $0
         sub(/^[^:]*:[0-9]+:/, "", content)
-        if (content ~ /(^|[^0-9A-Za-z])(4|5|6|7|9|10|11|12|13|14|15|17|18)([^0-9A-Za-z]|$)/) {
+        if (content ~ /(^|[^0-9A-Za-z])(4|5|6|7|8|9|10|11|12|13|14|15|17|18|21|47)([^0-9A-Za-z]|$)/) {
           print
           found = 1
         }
       }
       END { exit(found ? 0 : 1) }
     '; then
-  report "a GPIO pin literal (4/5/6/7/9/10/11/12/13/14/15/17/18) was found near a gpio/spi/io_num/pin token outside board_config.h"
+  report "a GPIO pin literal (4/5/6/7/8/9/10/11/12/13/14/15/17/18/21/47) was found near a gpio/spi/io_num/pin token outside board_config.h"
 fi
 
 echo "--- no resolution/tile-size literal in port/esp32 (display-driver, extends the include/src scan) ---"
@@ -575,6 +578,88 @@ else
     report "int64_t was not found in collision.h -- the widen-before-summing overflow guard (AC-1.7) must not be deleted silently"
   fi
 fi
+
+ANALOG_JOYSTICK_PURE_FILES="$INCLUDE_DIR/steamcore/analog_axis.h $TEST_DIR/analog_axis_test.cpp $TEST_DIR/fake_analog_source.h"
+ANALOG_JOYSTICK_PIN_FILES="$INCLUDE_DIR/steamcore/analog_axis.h $PORT_DIR/esp32/analog_joystick_source.h $PORT_DIR/esp32/analog_joystick_source.cpp"
+ANALOG_JOYSTICK_ALL_FILES="$ANALOG_JOYSTICK_PURE_FILES $PORT_DIR/esp32/analog_joystick_source.h $PORT_DIR/esp32/analog_joystick_source.cpp"
+
+echo "--- no wall-clock read or unseeded RNG in the analog-joystick mechanism (analog-joystick-input NFR-3) ---"
+# Same shared CLOCK_RNG_PATTERN as every other determinism-mechanism
+# block above. Deliberately does NOT include bench files (none exist for
+# this feature) or app_main.cpp (T7's harness legitimately ticks on a
+# fixed interval measured for logging only, mirroring every other
+# harness's own exemption).
+for f in $ANALOG_JOYSTICK_ALL_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected analog-joystick file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the analog-joystick determinism guarantee (NFR-3) depends on"
+  fi
+done
+
+echo "--- no dynamic allocation in the analog-joystick file set (NFR-2, extends the include/src grep to test/ and port/) ---"
+for f in $ANALOG_JOYSTICK_ALL_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected analog-joystick file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the analog-joystick file set"
+  fi
+done
+
+echo "--- no ADC channel/unit literal: derived via adc_oneshot_io_to_channel, never written down (analog-joystick-input, structural half of NFR-4) ---"
+# The whole point of board_config.h holding only GPIO pins for this
+# feature (plan ยง1 Decision 6) is that the ADC unit/channel is DERIVED
+# from those pins at init time, never a second, independently-typed
+# literal that could silently drift from the pin it actually belongs to.
+# ADC_CHANNEL_0/ADC_UNIT_0 etc. appearing anywhere under port/ or
+# firmware/system/main/ would be exactly that second copy reappearing.
+if grep -rnE 'ADC_CHANNEL_[0-9]|ADC_UNIT_[0-9]' \
+    "$PORT_DIR" "$SYSTEM_MAIN_DIR" \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "an ADC_CHANNEL_*/ADC_UNIT_* literal was found in port/ or firmware/system/main/ -- the channel/unit must be derived via adc_oneshot_io_to_channel, never written down as a second literal"
+fi
+
+echo "--- no VRX/VRY GPIO-pin literal (1, 2) outside board_config.h in the analog-joystick pin-referencing files (analog-joystick-input, extends AC-2.5) ---"
+# GPIO1/GPIO2 cannot join the GLOBAL GPIO-literal digit set above: the
+# digits 1 and 2 sit next to a gpio/spi/pin token constantly in ordinary,
+# unrelated code (loop counters, array indices, version numbers), which
+# would flood that rule with false positives. This feature-scoped block
+# covers only the three files where a drifting VRX/VRY pin copy could
+# actually reappear -- a real, accepted residual gap (any OTHER file
+# that names GPIO1/2 near a pin/gpio token is not covered by any rule),
+# recorded here rather than left for a reader to assume full coverage.
+for f in $ANALOG_JOYSTICK_PIN_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected analog-joystick file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  # `grep -nE` on a SINGLE file prefixes `LINE:`, not `FILE:LINE:` -- so the
+  # comment filter is anchored on `^[0-9]+:` here, unlike the sibling blocks
+  # above that grep several files with -nHE and therefore see two colons.
+  # With the two-colon form this filter silently matched nothing and the rule
+  # fired on pure comment lines (found at /peer-review, F1).
+  if grep -nE "$GPIO_TOKEN_PATTERN" "$f" \
+      | grep -vE '^[0-9]+:[[:space:]]*//' \
+      | awk '
+        {
+          content = $0
+          sub(/^[0-9]+:/, "", content)
+          if (content ~ /(^|[^0-9A-Za-z])(1|2|8|21|47)([^0-9A-Za-z]|$)/) {
+            print
+            found = 1
+          }
+        }
+        END { exit(found ? 0 : 1) }
+      '; then
+    report "a GPIO pin literal (1/2/8/21/47) was found in '$f' outside board_config.h"
+  fi
+done
 
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather
