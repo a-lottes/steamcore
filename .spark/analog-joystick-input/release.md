@@ -5,22 +5,25 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 3), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.6.0 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.6.0 |
 | **Date** | 2026-09-06 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, fresh pre-flight green right
-  now on this exact working tree, release commit and tag fully drafted and
-  ready — but **not executed**: this pass was explicitly requested
-  prepare-only, no commit, no tag, no push.
+- **Status:** `released` — both gates green, pre-flight re-run fresh at
+  prepare time and reproduced again post-tag (§1b). Commit
+  `c5c01b0732f7e5d3949a40dae5b8a18d954c3f3e` tagged `v0.6.0`. No push/PR/
+  deploy exist for this project (direct mode, no remote) — local commit +
+  tag is the entire publish action, both executed on the caller's explicit
+  go.
 - **Summary:** a second `Source`, `AnalogJoystickSource`, reads the real
   ADC stick (deadzone-thresholded, host-proven) and three buttons into
   `GameInput`, alongside the untouched `GpioInputSource`; US-3's on-device
   confirmation (T8) stays honestly `blocked` — nothing is wired yet.
-- **Open:** `2 outstanding` — create the release commit, then the annotated
-  tag; both are local-only (no remote configured), owner: whoever relays the
-  user's go-ahead to run §3's exact commands.
+- **Open:** none. The two items open at prepare time (commit, tag) are
+  done; the post-release smoke check reproduced pre-flight exactly (§1b).
+  US-3/T8 remains its own, plan-anticipated `blocked` state — not a release
+  blocker (Should, not a Must).
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the
   final ruling.
 - **On conflict:** the numbered body below wins for everything except
@@ -77,6 +80,40 @@
 - [x] `git diff --exit-code v0.3.0 -- firmware/steamcore/port/esp32/gpio_input_source.{h,cpp} firmware/steamcore/include/steamcore/{input,game_loop}.h`:
       empty — re-derived myself, not copied from `review.md`'s NFR-8 row.
 
+## 1b. Post-Release Smoke Check (re-run on the tagged commit)
+
+*Executed on the explicit caller go, on commit `c5c01b073` / tag `v0.6.0`,
+right after tagging — not copied from §1.*
+
+- [x] `git rev-parse HEAD` and `git rev-list -n1 v0.6.0` both resolve to
+      `c5c01b0732f7e5d3949a40dae5b8a18d954c3f3e` — the tag points at the
+      commit that was actually built and tested.
+- [x] `make test-all`: exit 0. `make test` (clang): **206 passed,
+      0 failed** — matches §1. `make test-asan`: **206 passed, 0 failed** —
+      matches §1. `make test-gcc`: **206 passed, 0 failed** — matches §1.
+      `make test-negative`: both deliberate self-checks reported exactly as
+      §1 (`0 passed, 1 failed`, `0 passed, 0 failed`) — matches.
+- [x] `make lint`: **OK** — all blocks clean, including this feature's four
+      (ADC-literal ban, VRX/VRY-pin ban, feature-scoped digit block,
+      clock/RNG/alloc ban) — matches §1.
+- [x] Device build: `source ~/esp/esp-idf/export.sh`, `idf.py fullclean &&
+      idf.py build` from `firmware/system/` (ESP-IDF v5.4.4, genuine clean
+      rebuild, not incremental): green, **`[1060/1060]`**, zero warnings —
+      identical step count to §1. `steamcore_system.bin` **0x32530 bytes
+      (80% partition free)** — byte-identical size to §1. Both
+      `analog_joystick_source.cpp.obj` and `gpio_input_source.cpp.obj`
+      re-confirmed present under
+      `build/esp-idf/main/CMakeFiles/__idf_main.dir/`.
+
+**Conclusion:** the tagged commit reproduces the same green result recorded
+at pre-flight — identical pass counts on all three host toolchains, identical
+lint outcome, identical device-build step count and binary size. Nothing
+regressed between prepare and publish. This project ships no rendering
+surface for this feature and has no deploy pipeline, so "alive" here means
+the flashable artifact reproducibly builds — there is no running service to
+poll; on-device confirmation of the physical stick/buttons stays out of
+scope, honestly `blocked` (T8, unwired hardware, plan-anticipated).
+
 ## 2. Changelog
 
 ### Added
@@ -107,16 +144,17 @@ stopping point, not a defect).
 
 ## 3. Release Actions
 
-*`direct` mode. Prepared 2026-09-06 immediately after re-verifying `git
-status` and re-running the full pre-flight (§1) fresh. **Not executed** —
-this pass was explicitly requested prepare-only.*
+*Executed on the caller's explicit go. Direct mode, no remote — the two
+local commands below are the entire publish action for this project; no
+push, no PR, no deploy exist for it.*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Prepared, not executed.** Exact commands in §3a below. |
+| Commit | **Done.** Commit `c5c01b0732f7e5d3949a40dae5b8a18d954c3f3e`, message `feat: add analog joystick input -- real stick and buttons reach GameInput alongside GpioInputSource` + `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer (matches this repo's convention). Staged via explicit `git add <path>` per file (§3a's exact 17-path list), never `-A`/`.`. |
+| Version bump & tag | **Done.** `v0.6.0` — `git tag -a v0.6.0 -m "analog-joystick-input: second Source reads real ADC stick + 3 buttons into GameInput, GpioInputSource untouched; US-3 on-device confirmation pending wiring (T8 blocked)" c5c01b0732f7e5d3949a40dae5b8a18d954c3f3e` (tag object `d4001996997f02c69b6d50c7e29499302e543647`). |
 | PR / merge | N/A — `direct` mode, no remote configured (`git remote -v` empty). |
-| Deploy | N/A — no deploy pipeline; the device flash is the artifact, already exercised (fresh forced-clean `idf.py build`, §1) pre-release. |
-| Post-release smoke check | **Pending.** Once the commit and tag below are authorized and executed, re-run this exact pre-flight (§1) on the tagged commit and confirm every number reproduces — that re-run is what closes this out, not this report. |
+| Deploy | N/A — no deploy pipeline; the device flash is the artifact, already exercised (fresh `idf.py fullclean && idf.py build`, §1 and re-confirmed §1b) pre- and post-tag. |
+| Post-release smoke check | **Done** — see §1b. Same green result as pre-flight, reproduced on the actual tagged commit: 206/206 x3 host toolchains, lint OK, device build `[1060/1060]` with byte-identical binary size. |
 
 **Version justification.** `git tag -l` (sorted): `v0.0.1`–`v0.0.4`
 (retroactive catch-ups, per `CLAUDE.md`), `v0.1.0`–`v0.5.0` as same-day
@@ -131,54 +169,44 @@ shipped public symbol (`GameInput`, `InputReader`, `Debouncer`,
 `v0.3.0`, §1). Not PATCH (new functionality, not a bug fix); not MAJOR
 (nothing removed or resignatured).
 
-**§3a. Exact commands to run, in order, once authorized:**
+**Exact file list staged (never `-A`/`.`), matched against a fresh
+`git status --short` re-checked immediately before staging — no drift found,
+matches the prepared §3a list exactly:**
 
 ```
-git add \
-  firmware/steamcore/include/steamcore/analog_axis.h \
-  firmware/steamcore/test/analog_axis_test.cpp \
-  firmware/steamcore/test/fake_analog_source.h \
-  firmware/steamcore/port/esp32/analog_joystick_source.h \
-  firmware/steamcore/port/esp32/analog_joystick_source.cpp \
-  docs/wiring-analog-joystick.md \
-  firmware/steamcore/include/steamcore/board_config.h \
-  firmware/system/main/CMakeLists.txt \
-  firmware/system/main/app_main.cpp \
-  docs/host-tests.md \
-  docs/device-build.md \
-  tools/check_constraints.sh \
-  .spark/analog-joystick-input/spec.md \
-  .spark/analog-joystick-input/plan.md \
-  .spark/analog-joystick-input/review.md \
-  .spark/analog-joystick-input/qa.md \
-  .spark/analog-joystick-input/release.md
-
-git commit -m "$(cat <<'EOF'
-feat: add analog joystick input -- real stick and buttons reach GameInput alongside GpioInputSource
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
-EOF
-)"
-
-git tag -a v0.6.0 -m "analog-joystick-input: second Source reads real ADC stick + 3 buttons into GameInput, GpioInputSource untouched; US-3 on-device confirmation pending wiring (T8 blocked)"
+firmware/steamcore/include/steamcore/analog_axis.h
+firmware/steamcore/test/analog_axis_test.cpp
+firmware/steamcore/test/fake_analog_source.h
+firmware/steamcore/port/esp32/analog_joystick_source.h
+firmware/steamcore/port/esp32/analog_joystick_source.cpp
+docs/wiring-analog-joystick.md
+firmware/steamcore/include/steamcore/board_config.h
+firmware/system/main/CMakeLists.txt
+firmware/system/main/app_main.cpp
+docs/host-tests.md
+docs/device-build.md
+tools/check_constraints.sh
+.spark/analog-joystick-input/spec.md
+.spark/analog-joystick-input/plan.md
+.spark/analog-joystick-input/review.md
+.spark/analog-joystick-input/qa.md
+.spark/analog-joystick-input/release.md
 ```
-
-No `-A`/`.` used — every path named explicitly, per this project's own
-git-staging discipline. This list was reconciled against a fresh
-`git status` at §1 and matches exactly; nothing was added or dropped.
 
 **Explicitly excluded (pre-existing, unrelated, confirmed still present
-and untouched after re-checking):** `.spark/start-screen/release.md`,
-`CLAUDE.md`, `assets/Buttons.png`, `assets/fonts/`, `assets/sprites/`.
+and untouched after re-checking at execution time):** `.spark/start-screen/
+release.md`, `CLAUDE.md`, `assets/Buttons.png`, `assets/fonts/`,
+`assets/sprites/`.
 
 **Rollback path** (local-only — nothing pushed, nothing to unwind on a
 remote; `git remote -v` is empty):
-- Commit made but wrong: `git reset --soft HEAD~1` — restores every file
-  to the working tree, nothing lost. Run `git tag -d v0.6.0` first if the
-  tag was also created.
-- Tag wrong but commit fine: `git tag -d v0.6.0` — local tag only, commit
-  untouched; re-tag once corrected.
-- Both wrong: `git tag -d v0.6.0` then `git reset --soft HEAD~1`.
+- Committed and tagged as `c5c01b0732f7e5d3949a40dae5b8a18d954c3f3e` /
+  `v0.6.0`. If found wrong: `git tag -d v0.6.0` (delete the tag first), then
+  `git reset --soft HEAD~1` — restores every file to the working tree,
+  nothing lost, and re-exposes the untracked/modified state exactly as it
+  was pre-commit.
+- Tag wrong but commit fine: `git tag -d v0.6.0` only, then re-tag once
+  corrected.
 - Nothing is deployed anywhere (no remote, no pipeline), so no rollback
   step beyond the two above is ever needed for this release.
 
@@ -202,6 +230,11 @@ remote; `git remote -v` is empty):
   blocked half rather than deferring the whole story — `CLAUDE.md` already
   documents this pattern from the first two; nothing new to add, but a
   third clean application is worth noting as confirmation it generalizes.
+  Also new this pass: re-running a device build post-tag as a genuine
+  `fullclean` rather than trusting an incremental ninja cache caught nothing
+  wrong here, but is the only way the `[1060/1060]`-step-count match in §1b
+  is actually meaningful — an incremental rebuild would have reused
+  pre-flight's cached objects and silently proven nothing new.
 
 ---
 
@@ -209,19 +242,20 @@ remote; `git remote -v` is empty):
 
 *All boxes checked → the loop is closed. The feature is done-done.*
 
-- [x] All pre-flight checks passed at release time
+- [x] All pre-flight checks passed at release time — full suite green fresh
+      at prepare time (206/206 x3, lint clean, clean-state device build
+      `[1060/1060]`), and reproduced again post-tag on the actual released
+      commit (§1b): same pass counts, same lint outcome, same device-build
+      step count and binary size, no uncommitted changes belonging to this
+      feature.
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified (or `aborted` with reason) —
-      **not executed**: this pass was explicitly requested prepare-only;
-      §3/§3a are fully drafted and ready, awaiting the user's go-ahead to
-      run the two pending local commands (commit, tag)
+- [x] Release actions executed and verified — commit `c5c01b073`, tag
+      `v0.6.0`, and the post-release smoke check are all done (§3, §1b); no
+      push/PR/deploy exist for this project (direct mode, no remote).
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 174 / Soll ~100 (excluding HTML comments)
-      — 74 over; reason: the explicit never-`-A` 17-path file list, the
-      exact ready-to-run commit/tag commands (requested by this pass), and
-      the version-justification paragraph together account for the
-      overage, not prose
-- [ ] Status set to `released`, or `handed-off` in declared `pr` mode — not
-      applicable this pass: `direct` mode, status is `preparing`; nothing
-      outstanding beyond §3a's two commands, owner is whoever relays the
-      user's go-ahead
+- [x] Line budget respected: Ist 197 / Soll ~100 (excluding HTML comments)
+      — 97 over; reason: §1b (post-release smoke-check detail, required by
+      this pass), the explicit never-`-A` 17-path file list, the exact
+      commit/tag identifiers, and the version-justification paragraph
+      together account for the overage, not prose padding
+- [x] Status set to `released`
