@@ -99,7 +99,14 @@ measured, not guessed.
 
 ## Status
 
-Nothing is physically wired yet. Wiring this table up on the real board,
-with the 3.3V rail confirmed, is the explicit next step before plan.md's T8
-(hardware-gated on-device confirmation) can be attempted; until then T8 is
-reported `blocked`.
+A first wiring attempt (2026-09-06) did not yet produce a confirmable
+result: on the flashed harness (plan.md T7), `rawX`/`rawY` were unstable
+(observed jumping between 0, 4095, and briefly a plausible ~2600 centred
+value), and none of the three digital signals (start/fire/select) ever
+registered a press. Both symptoms together point at a common-cause fault,
+most likely an unreliable GND connection between the board and the
+breadboard rather than three independent pin failures — but this was not
+confirmed with a multimeter and remains a hypothesis. Next step before
+retrying: verify continuity on every connection, especially the shared
+ground, then re-run the harness. T8 stays `blocked` until a stable reading
+is observed.

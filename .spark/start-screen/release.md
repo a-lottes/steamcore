@@ -5,21 +5,21 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 2), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.4.0 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.4.0 |
 | **Date** | 2026-09-05 |
 
 **Handoff**
-- **Status:** `preparing` — both gates green, fresh pre-flight green on host and
-  device toolchains, version proposed, changelog and rollback path written,
-  exact file list re-checked against `git status` right now. **No commit, no
-  tag, nothing outward-facing has been executed.** Awaiting the user's
-  explicit go, relayed by the caller, before any command in §3 runs.
+- **Status:** `released` — both gates green, fresh pre-flight green on host and
+  device toolchains (both before and after the commit), version bumped,
+  changelog and rollback path written, release commit `a8e590f` created,
+  annotated tag `v0.4.0` created on that commit, post-release smoke check
+  re-run against the tagged commit and reproduced every §1 number exactly.
 - **Summary:** The console now shows its own title screen — "STEAMCORE" over
   "PRESS START" — while idle, gone the instant play begins; confirmed on the
   real physical panel (T12).
-- **Open:** `1 outstanding` — explicit user go to execute §3's commit + local
-  tag. Nothing is pushed anywhere in `direct` mode; there is no remote.
+- **Open:** none. `direct` mode, no remote — nothing pushed anywhere, nothing
+  outstanding.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the
   final ruling.
 - **On conflict:** the numbered body below wins for everything except
@@ -103,16 +103,16 @@ thing (plan.md T12, 2026-09-04).
 
 ## 3. Release Actions
 
-*`direct` mode. **Not yet executed** — prepared and ready, pending the user's
-explicit go relayed by the caller. Nothing in this section has run.*
+*`direct` mode. Executed with the user's explicit go ("ja, veröffentlichen"),
+relayed by the caller, for exactly the plan below — nothing more.*
 
 | Action | Result |
 |---|---|
-| Version bump & tag | **Prepared, not executed.** Proposed: annotated tag `v0.4.0` on the release commit (message to be drafted from §2 at execution time). |
-| Commit | **Prepared, not executed.** Proposed Conventional Commits message: `feat: add start screen — STEAMCORE title over PRESS START, gone the instant play begins`. |
+| Version bump & tag | **Done.** Annotated tag `v0.4.0` created on release commit `a8e590f`: `git tag -a v0.4.0 -m "start-screen: STEAMCORE title screen over PRESS START, real-hardware confirmed"`. `git rev-parse v0.4.0` → `a8e590f`. |
+| Commit | **Done.** Commit `a8e590f` on `main`: `feat: add start screen — STEAMCORE title over PRESS START, gone the instant play begins` (+ Co-Authored-By trailer). 24 files changed, exactly §3's prepared file list — re-checked against a fresh `git status` immediately before staging, no drift found, all 24 paths staged via explicit `git add <path>`, none via `-A`/`.`. |
 | PR / merge | N/A — `direct` mode, no remote configured. |
-| Deploy | N/A — no deploy pipeline; the device flash is the release artifact, already exercised (clean `idf.py build`, §1) and previously flashed live during `/increment` (plan.md T12). |
-| Post-release smoke check | **Pending.** Once committed, will re-run the identical host+device pre-flight on the tagged commit itself and confirm every number in §1 reproduces exactly. |
+| Deploy | N/A — no deploy pipeline; the device flash is the release artifact, already exercised (clean `idf.py build` pre-commit and again post-commit against `a8e590f`, both green) and previously flashed live during `/increment` (plan.md T12). |
+| Post-release smoke check | **Done.** Re-ran the identical host+device pre-flight against the tagged commit `a8e590f` itself: `make test`/`make test-asan`/`make test-gcc` all **171/171**, `make lint` clean, `make test-python` **31/31**, `idf.py build` green with all five device-touched `.cpp` files rebuilt (forced by `touch`) and an identical `steamcore_system.bin` size of `0x3c540` bytes, 76% partition free — every §1 number reproduced exactly on the committed, tagged tree. |
 
 **Version justification.** Prior tags: `v0.0.1`–`v0.0.4` (retroactive
 catch-ups on historical commits, per `CLAUDE.md`), `v0.1.0`
@@ -129,9 +129,9 @@ change to any existing released symbol. `GameState`, `GameSession`,
 confirmations of the same fact). Not a PATCH (new functionality, not a bug
 fix); not a MAJOR (nothing existing removed or resignatured).
 
-**Exact file list to stage (explicit `git add <path>` calls, never
-`-A`/`.`; re-checked against a fresh `git status` at report-writing time —
-no drift found from the task's prepared list):**
+**Exact file list staged (explicit `git add <path>` calls, never
+`-A`/`.`; re-checked against a fresh `git status` immediately before
+staging — no drift from the prepared list):**
 - Modified: `Makefile`, `docs/device-build.md`, `docs/dump-format.md`,
   `docs/host-tests.md`, `firmware/steamcore/src/font.cpp`,
   `firmware/system/main/CMakeLists.txt`,
@@ -152,14 +152,14 @@ no drift found from the task's prepared list):**
 
 **Explicitly excluded:** `assets/Buttons.png`, `assets/fonts/`,
 `assets/sprites/` — untracked, pre-existing, unrelated to this feature
-(flagged by both `review.md` and `qa.md`). Must still be untracked
+(flagged by both `review.md` and `qa.md`). Confirmed still untracked
 immediately after the commit — did not ride along.
 
 **Rollback path** (local-only, nothing pushed, nothing to unwind on a
 remote — `git remote -v` is empty):
-- Commit made but wrong: `git reset --soft HEAD~1` — restores every file to
-  the working tree, nothing lost. Run `git tag -d v0.4.0` first if the tag
-  was also created.
+- Commit made but wrong: `git tag -d v0.4.0` (the tag exists — delete it
+  first), then `git reset --soft HEAD~1` — restores every file to the
+  working tree, nothing lost.
 - Tag wrong but commit fine: `git tag -d v0.4.0` — local tag only, commit
   untouched, re-tag once corrected.
 - Both wrong: `git tag -d v0.4.0` then `git reset --soft HEAD~1`.
@@ -173,8 +173,8 @@ remote — `git remote -v` is empty):
   first draft's tests imported the title strings from the code under test
   instead of restating them, so AC-1.2's wording could have regressed
   silently. Re-verifying independently at release time (fresh 171/171 x3,
-  clean lint, forced-recompile device build) reproduced every number the
-  gates cited with no surprises.
+  clean lint, forced-recompile device build, both pre- and post-commit)
+  reproduced every number the gates cited with no surprises.
 - **What we'd do differently:** two latent `font.cpp` device-build
   incompatibilities (a `throw` under `-fno-exceptions`, an implicit
   `<cstddef>` dependency) went undetected since `text-rendering` shipped,
@@ -200,15 +200,15 @@ remote — `git remote -v` is empty):
       forced non-cached recompile, all four released engine types confirmed
       byte-identical, `git status` re-checked immediately before this report
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified (or `aborted` with reason) —
-      **not yet**: commit and tag are prepared, not executed; pending the
-      user's explicit go. Deploy and PR/merge correctly N/A for `direct`
-      mode with no pipeline
+- [x] Release actions executed and verified — commit `a8e590f` and annotated
+      tag `v0.4.0` created; post-release smoke check re-run against the
+      tagged commit reproduced every §1 number exactly. Deploy and PR/merge
+      correctly N/A for `direct` mode with no pipeline
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 145 / Soll ~100 (excluding HTML comments) —
-      45 over; reason: the never-`-A` explicit file list, the version
+- [x] Line budget respected: Ist 151 / Soll ~100 (excluding HTML comments) —
+      51 over; reason: the never-`-A` explicit file list, the version
       justification paragraph and the dual gate-recap in §0 together account
       for it, not prose (same overage class as `input-driver`'s release)
-- [ ] Status set to `released`, or `handed-off` in declared `pr` mode —
-      `direct` mode, but nothing has executed yet: status stays `preparing`
-      until the user's go authorizes §3's commit + tag
+- [x] Status set to `released`, or `handed-off` in declared `pr` mode —
+      `direct` mode, commit `a8e590f` and tag `v0.4.0` are the complete
+      publish action for this project (no remote, nothing pushed)
