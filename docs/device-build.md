@@ -6,18 +6,23 @@ and watch it on the real ESP32-S3-N16R8 board. `docs/host-tests.md` covers
 everything that *can* run without the board.
 
 `firmware/system/main/app_main.cpp` currently runs the
-**galactic-invasion** device-build-insurance harness (plan.md T16): drives
-a real `GalacticInvasion` through the completely unmodified
-`GameLoop<Game>`, pushed to the already-wired ILI9488 panel, with a
-synthetic `start` pulse (no buttons needed). This is compile insurance
-only — see "What's verified this way" below — not a claim that the game
-has been played on hardware. Flashing this build no longer runs the
-analog-joystick-input harness that produced v0.6.0's release evidence —
-that harness is throwaway by construction and its source is preserved
-verbatim in git history at the v0.6.0 tag, and every prior harness
-(`title_screen_harness_game.h`, and now `galactic_invasion_harness_game.h`)
+**highscore-system** device-build-insurance harness (highscore-system
+plan.md T14): drives a real
+`HighscoreGame<GalacticInvasion, HighscoreStore<NvsHighscoreBackend>>`
+through the completely unmodified `GameLoop<Game>`, pushed to the
+already-wired ILI9488 panel, with synthetic `fire`/`start` square-wave
+pulses (no buttons needed — see `highscore_harness_game.h`'s own doc
+comment for why one mechanism serves both "start the first round" and
+"restart after a finished TABLE screen"). This is compile insurance only
+— see "What's verified this way" below — not a claim that any of this has
+been played, or that an entry has survived a power cycle, on hardware.
+Flashing this build no longer runs the galactic-invasion harness that
+produced v0.7.0's release evidence — that harness is throwaway by
+construction and its source is preserved verbatim in git history at the
+v0.7.0 tag, and every prior harness (`title_screen_harness_game.h`,
+`galactic_invasion_harness_game.h`, and now `highscore_harness_game.h`)
 stays on disk (the same posture every prior harness swap took, most
-recently start-screen plan.md §1 Decision 8).
+recently galactic-invasion plan.md T16).
 
 ## Reading the analog-joystick harness log (superseded, kept for history)
 
@@ -179,6 +184,32 @@ Decision 8):
   proven since v0.2.0, and this harness needs no buttons (a synthetic
   `start` pulse drives READY → PLAYING after ~3 seconds), so — unlike
   `input-driver`'s T10 — this one is expected to actually run.
+
+`highscore-system` splits the same way (plan.md T14/T15):
+
+- **Host-CI-verifiable** (`make test`/`test-asan`/`test-gcc`/`lint`, zero
+  ESP-IDF, never touches the board): every AC this feature owns except
+  AC-1.5 — the whole `HighscoreTable`/`HighscoreBlock` encode/decode/
+  qualify/insert contract, `InitialsEntry`, both screens' layout, the
+  composed `HighscoreGame` wiring against a `FakeFlashBackend`, and the
+  end-to-end determinism replay — see `docs/host-tests.md`.
+- **Structurally verifiable without hardware** (T14, this document's
+  `idf.py build` step above, no human and no wiring needed): AC-1.4 (no
+  ESP-IDF header outside `port/`) and NFR-10 — read
+  `firmware/steamcore/port/esp32/nvs_highscore_backend.{h,cpp}` and
+  `firmware/system/main/app_main.cpp`/`highscore_harness_game.h` to
+  confirm `HighscoreStore<Backend>`'s and `GameLoop`'s shipped public APIs
+  are used unmodified, and that `NvsHighscoreBackend` satisfies the
+  `Backend` concept exactly (`bool read(uint8_t*, int32_t)`/
+  `bool write(const uint8_t*, int32_t)`) with no other public surface.
+- **Needs the physical board** (plan.md T15, a Should — a `blocked` result
+  here does not hold the feature back, CLAUDE.md's hardware-gated-Should
+  split): AC-1.5 — a real entry recorded through the real screens must
+  survive an actual power cycle. The host's own "reconstruct a second
+  `HighscoreStore` over the same backend bytes" proof (T4/T8) already
+  covers AC-1.2 (the *persistence format* round-trips); it does not and
+  cannot stand in for AC-1.5 (the *real NVS partition* round-trips across
+  an actual power-off), which needs the board.
 
 ## Capturing an SCFB dump from the serial console (start-screen T11)
 

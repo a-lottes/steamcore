@@ -23,10 +23,15 @@ idf_component_register(
          "../../steamcore/src/text.cpp"
          "../../steamcore/src/font.cpp"
          "../../steamcore/src/dump_format.cpp"
+         "../../steamcore/src/highscore.cpp"
+         "../../steamcore/src/highscore_flow.cpp"
+         "../../steamcore/src/highscore_screen.cpp"
+         "../../steamcore/src/initials_entry.cpp"
          "../../steamcore/port/esp32/ili9488_display.cpp"
          "../../steamcore/port/esp32/gpio_input_source.cpp"
          "../../steamcore/port/esp32/analog_joystick_source.cpp"
+         "../../steamcore/port/esp32/nvs_highscore_backend.cpp"
          "../../../games/galactic_invasion/galactic_invasion.cpp"
     INCLUDE_DIRS "." "../../steamcore/include" "../.." "../../../games"
-    REQUIRES driver esp_timer esp_adc
+    REQUIRES driver esp_timer esp_adc nvs_flash
 )

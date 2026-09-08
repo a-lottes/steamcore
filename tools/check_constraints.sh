@@ -55,7 +55,7 @@ if grep -rnE '\bnew\b|\b(m|c|re)alloc[[:space:]]*\(|\bstrdup[[:space:]]*\(|std::
 fi
 
 echo "--- no ESP-IDF/FreeRTOS/driver header in logic code (constitution §4) ---"
-if grep -rnE '#include[[:space:]]*[<"](esp_[A-Za-z0-9_]*\.h|esp32s3/|freertos/|driver/|hal/|soc/|sdkconfig\.h|nvs_flash\.h)' \
+if grep -rnE '#include[[:space:]]*[<"](esp_[A-Za-z0-9_]*\.h|esp32s3/|freertos/|driver/|hal/|soc/|sdkconfig\.h|nvs_flash\.h|nvs\.h)' \
     "$INCLUDE_DIR" "$SRC_DIR"; then
   report "an ESP-IDF/FreeRTOS/driver header was found above -- logic code must stay hardware-free"
 fi
@@ -695,7 +695,7 @@ for f in $GALACTIC_INVASION_ALLOC_FILES; do
 done
 
 echo "--- no ESP-IDF/FreeRTOS/driver header in games/ (galactic-invasion, constitution §4) ---"
-if grep -rnE '#include[[:space:]]*[<"](esp_[A-Za-z0-9_]*\.h|esp32s3/|freertos/|driver/|hal/|soc/|sdkconfig\.h|nvs_flash\.h)' \
+if grep -rnE '#include[[:space:]]*[<"](esp_[A-Za-z0-9_]*\.h|esp32s3/|freertos/|driver/|hal/|soc/|sdkconfig\.h|nvs_flash\.h|nvs\.h)' \
     "$GAMES_DIR"; then
   report "an ESP-IDF/FreeRTOS/driver header was found in games/ -- game logic must stay hardware-free"
 fi
@@ -791,6 +791,114 @@ fi
 if ! grep -nHF 'must not overlap' "$GAME_DIR/galactic_invasion.h" \
     | grep -qvE ':[0-9]+:[[:space:]]*//'; then
   report "the HUD/player-band disjointness static_asserts (AC-7.2) were not found in galactic_invasion.h -- they must not be deleted silently"
+fi
+
+HIGHSCORE_SRC_FILES="$INCLUDE_DIR/steamcore/round_result.h $INCLUDE_DIR/steamcore/highscore.h $SRC_DIR/highscore.cpp $INCLUDE_DIR/steamcore/highscore_game.h $INCLUDE_DIR/steamcore/highscore_flow.h $SRC_DIR/highscore_flow.cpp $INCLUDE_DIR/steamcore/highscore_screen.h $SRC_DIR/highscore_screen.cpp $INCLUDE_DIR/steamcore/initials_entry.h $SRC_DIR/initials_entry.cpp"
+HIGHSCORE_TEST_FILES="$TEST_DIR/highscore_table_test.cpp $TEST_DIR/highscore_block_test.cpp $TEST_DIR/fake_flash_backend.h $TEST_DIR/highscore_store_test.cpp $TEST_DIR/initials_entry_test.cpp $TEST_DIR/highscore_screen_test.cpp $TEST_DIR/highscore_flow_test.cpp $TEST_DIR/highscore_game_test.cpp $TEST_DIR/highscore_determinism_test.cpp $TEST_DIR/highscore_dump_test.cpp $TEST_DIR/galactic_invasion_highscore_test.cpp"
+# The device backend (port/esp32/nvs_highscore_backend.{h,cpp}) does not
+# exist yet at this point in the plan -- T14 builds it after this task --
+# so, unlike display-driver/analog-joystick's own port-reaching blocks,
+# this one is scoped to the engine+test files that exist today. T14 is
+# responsible for extending this block if/when it adds port/ files this
+# feature's determinism or allocation guarantees should also cover.
+HIGHSCORE_DETERMINISM_FILES="$HIGHSCORE_SRC_FILES $HIGHSCORE_TEST_FILES"
+HIGHSCORE_ALLOC_FILES="$HIGHSCORE_DETERMINISM_FILES $TEST_DIR/bench_highscore.cpp"
+
+echo "--- highscore-system file set exists (NFR-2/NFR-3/AC-1.4/AC-2.4/NFR-6) ---"
+for f in $HIGHSCORE_ALLOC_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected highscore-system file '$f' does not exist -- refusing to skip it silently"
+  fi
+done
+
+echo "--- no dynamic allocation in the highscore-system file set (NFR-2, extends the include/src grep to test/ and the bench) ---"
+for f in $HIGHSCORE_ALLOC_FILES; do
+  if [ ! -f "$f" ]; then
+    continue
+  fi
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the highscore-system file set"
+  fi
+done
+
+echo "--- no wall-clock read or unseeded RNG in the highscore-system mechanism (NFR-3) ---"
+# Same shared CLOCK_RNG_PATTERN as every other determinism-mechanism block
+# above. Deliberately excludes bench_highscore.cpp -- measuring elapsed
+# time with <chrono> is that file's entire legitimate purpose, the same
+# exemption every other bench in this project already has.
+for f in $HIGHSCORE_DETERMINISM_FILES; do
+  if [ ! -f "$f" ]; then
+    continue
+  fi
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the highscore-system determinism guarantee (NFR-3, AC-2.5) depends on"
+  fi
+done
+
+echo "--- no .start read in initials_entry.{h,cpp} (structural half of AC-2.4) ---"
+# AC-2.4: the initials-entry screen never reacts to start at all -- not
+# ignored-and-discarded, simply absent from every expression in this
+# type, the same posture GameInput's own doc comment holds InitialsEntry
+# to. A bare ".start" text match is enough: this type's only GameInput
+# parameter is named "input" throughout, so "input.start" is the only way
+# the token could legitimately appear at all.
+for f in "$INCLUDE_DIR/steamcore/initials_entry.h" "$SRC_DIR/initials_entry.cpp"; do
+  if [ ! -f "$f" ]; then
+    report "expected highscore-system file '$f' does not exist -- refusing to skip it silently"
+    continue
+  fi
+  if grep -nHF '.start' "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a '.start' reference was found in '$f' -- InitialsEntry must never read GameInput's start field (AC-2.4)"
+  fi
+done
+
+echo "--- highscore_screen.cpp draws only through drawText (AC-3.1) ---"
+# Mirrors title_screen.cpp's own rule (start-screen AC-1.3): both screens
+# this file draws are composed entirely of drawText calls, never a direct
+# pixel/rect/sprite primitive.
+if [ ! -f "$SRC_DIR/highscore_screen.cpp" ]; then
+  report "expected highscore-system file '$SRC_DIR/highscore_screen.cpp' does not exist -- refusing to skip it silently"
+else
+  if grep -nHE '\b(setPixel|fillRect|blit)[[:space:]]*\(' \
+      "$SRC_DIR/highscore_screen.cpp" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a setPixel(/fillRect(/blit( call was found in highscore_screen.cpp -- both screens must draw only through drawText (AC-3.1)"
+  fi
+fi
+
+echo "--- highscore-system's format-version, slot-count and row-invariant guards are present (NFR-6, presence only) ---"
+# Presence, not correctness -- T3/T8's host tests are what actually prove
+# the format-version/slot-count checks and the row layouts correct; these
+# only guard against any of the five being silently deleted, the same
+# posture as every other presence-only check above.
+if [ ! -f "$INCLUDE_DIR/steamcore/highscore.h" ]; then
+  report "expected highscore-system file '$INCLUDE_DIR/steamcore/highscore.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nHF 'kFormatVersion' "$INCLUDE_DIR/steamcore/highscore.h" \
+      | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+    report "kFormatVersion was not found in highscore.h -- the persisted format-version constant must not be deleted silently (NFR-6)"
+  fi
+fi
+if [ ! -f "$SRC_DIR/highscore.cpp" ]; then
+  report "expected highscore-system file '$SRC_DIR/highscore.cpp' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nHF 'slotCount != static_cast<uint32_t>(kGameSlotCount)' "$SRC_DIR/highscore.cpp" \
+      | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+    report "the persisted slot-count guard was not found in highscore.cpp -- decodeBlock must not silently drop its independent slot-count check (A6)"
+  fi
+fi
+if [ ! -f "$INCLUDE_DIR/steamcore/highscore_screen.h" ]; then
+  report "expected highscore-system file '$INCLUDE_DIR/steamcore/highscore_screen.h' does not exist -- refusing to skip it silently"
+else
+  if ! grep -nHF 'ENTRY screen rows must be strictly increasing' "$INCLUDE_DIR/steamcore/highscore_screen.h" \
+      | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+    report "the ENTRY screen's row-order static_assert was not found in highscore_screen.h -- it must not be deleted silently"
+  fi
+  if ! grep -nHF "header must sit above its first entry row" "$INCLUDE_DIR/steamcore/highscore_screen.h" \
+      | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+    report "the TABLE screen's row-order static_assert was not found in highscore_screen.h -- it must not be deleted silently"
+  fi
 fi
 
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"

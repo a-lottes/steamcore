@@ -8,6 +8,7 @@
 #include "steamcore/framebuffer.h"
 #include "steamcore/game_loop.h"
 #include "steamcore/game_state.h"
+#include "steamcore/round_result.h"
 
 // SteamCore's first playable game (galactic-invasion plan §1) -- a
 // Galaga/Space-Invaders homage composing nine already-shipped primitives
@@ -92,11 +93,22 @@
 //    rendered screen is the only observable difference (NFR-5).
 //  - Single-threaded, nothing throws, no error code, no dynamic
 //    allocation -- same inherited contract as every other steamcore type.
+//  - `roundResult()` (highscore-system AC-5.2, the one deliberate,
+//    additive amendment to the "no accessor" claim below): returns
+//    `{session_.state() == GameState::GAME_OVER, score_}`. Exists solely
+//    so a caller composing above this type (e.g. a
+//    `HighscoreGame<Game, Store>` wrapper, steamcore/highscore_game.h)
+//    can learn a round ended and what it scored, without this type
+//    knowing anything about highscores itself. `score` is stable from
+//    the tick `ended` first becomes true until the next restart (this
+//    type stops scoring the instant the round ends). No lives, formation
+//    state or the private Outcome below is exposed by it or by anything
+//    else.
 //
-// Public surface is exactly this type's constructor, update() and
-// render() (NFR-5) -- no accessor for score, lives, formation state or
-// outcome. Everything a caller or a test can observe is a rendered
-// pixel.
+// Public surface is this type's constructor, update(), render() and
+// roundResult() (NFR-5, amended as above) -- no accessor for lives,
+// formation state or outcome. Everything else a caller or a test can
+// observe is a rendered pixel.
 namespace steamcore::games {
 
 // Player horizontal speed, in pixels per tick -- a tick count, never a
@@ -179,6 +191,16 @@ inline constexpr int32_t kScorePerKill = 10;
 // A1: lives a fresh round starts with -- named so the member initializer
 // and resetRound() cannot drift apart (review F6).
 inline constexpr int32_t kStartingLives = 3;
+
+// highscore-system plan §1 Decision 6: this game's own identity, for
+// whichever caller composes it with a Highscore System (e.g.
+// `HighscoreGame<GalacticInvasion, Store>`) -- data that sits next to the
+// game that owns it, not this class's own surface, and therefore outside
+// AC-5.2's "one member" budget by the same reading that already lets this
+// header export its layout constants. This game itself knows nothing
+// about highscores; it never reads either constant.
+inline constexpr int32_t kHighscoreSlot = 0;
+inline constexpr char kHighscoreName[] = "GALACTIC INVASION";
 
 // US-10/A12: ticks of post-respawn invulnerability, and the flicker that
 // makes the window visible (AC-10.8) -- 4 on / 4 off, chosen so 120 divides
@@ -295,6 +317,14 @@ class GalacticInvasion {
   // Satisfies GameLoop<Game>'s Game concept.
   void update(const GameInput& input);
   void render(Framebuffer& fb);
+
+  // highscore-system AC-5.2: the one deliberate, additive exception to
+  // this type's no-accessor rule -- see this file's top comment for the
+  // full amendment. No lives, formation state or Outcome is exposed by
+  // this or any other public member.
+  RoundResult roundResult() const {
+    return {session_.state() == GameState::GAME_OVER, score_};
+  }
 
  private:
   // Re-initializes every piece of round state to a fresh round's starting

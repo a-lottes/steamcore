@@ -53,6 +53,16 @@ CXXFLAGS += -DSTEAMCORE_GAME_DUMP='"$(GAME_DUMP)"'
 GAME_WIN_DUMP := $(BUILD_DIR)/galactic_invasion_win_pattern.scfb
 CXXFLAGS += -DSTEAMCORE_GAME_WIN_DUMP='"$(GAME_WIN_DUMP)"'
 
+# Same reasoning and wiring as GAME_DUMP/GAME_WIN_DUMP above
+# (highscore-system T10): two uncommitted dumps, the initials-entry screen
+# mid-entry and a full 5-row top-5 table, both cleaned before `view`'s own
+# `test` prerequisite runs so a FILTER'd `make view` can never decode a
+# stale file instead of failing loudly on a missing one.
+ENTRY_DUMP := $(BUILD_DIR)/highscore_entry_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_ENTRY_DUMP='"$(ENTRY_DUMP)"'
+TABLE_DUMP := $(BUILD_DIR)/highscore_table_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_TABLE_DUMP='"$(TABLE_DUMP)"'
+
 ENGINE_SRCS := $(wildcard $(SRC_DIR)/*.cpp)
 GAME_SRCS := $(wildcard $(GAMES_DIR)/*/*.cpp)
 TEST_SRCS := $(wildcard $(TEST_DIR)/*_test.cpp)
@@ -67,6 +77,7 @@ GAME_LOOP_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_game_loop
 TITLE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_title_screen
 COLLISION_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_collision
 GAME_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_galactic_invasion
+HIGHSCORE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_highscore
 
 # Every binary target below is itself .PHONY: its recipe runs on EVERY
 # invocation, unconditionally, regardless of any file mtime. This host
@@ -78,7 +89,7 @@ GAME_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_galactic_invasion
 # takes ~1.3s, which is cheap enough that giving up incremental caching
 # entirely is the right trade for a gate that must never report success
 # on code it did not actually just compile.
-.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN)
+.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN) $(HIGHSCORE_BENCH_BIN)
 
 .PHONY: test
 test: $(TEST_BIN)
@@ -143,13 +154,14 @@ test-gcc:
 	$(MAKE) test CXX=g++
 
 .PHONY: bench
-bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN)
+bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN) $(HIGHSCORE_BENCH_BIN)
 	$(BENCH_BIN)
 	$(TEXT_BENCH_BIN)
 	$(GAME_LOOP_BENCH_BIN)
 	$(TITLE_BENCH_BIN)
 	$(COLLISION_BENCH_BIN)
 	$(GAME_BENCH_BIN)
+	$(HIGHSCORE_BENCH_BIN)
 
 $(BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
@@ -175,11 +187,17 @@ $(GAME_BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(GAME_SRCS) $(TEST_DIR)/bench_galactic_invasion.cpp
 
+$(HIGHSCORE_BENCH_BIN):
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(GAME_SRCS) $(TEST_DIR)/bench_highscore.cpp
+
 VIEWER_PNG := $(BUILD_DIR)/pattern.png
 TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
 TITLE_VIEWER_PNG := $(BUILD_DIR)/title_screen.png
 GAME_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_pattern.png
 GAME_WIN_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_win_pattern.png
+ENTRY_VIEWER_PNG := $(BUILD_DIR)/highscore_entry_pattern.png
+TABLE_VIEWER_PNG := $(BUILD_DIR)/highscore_table_pattern.png
 
 # US-5: one command from a clean checkout to viewable PNGs of the
 # rendering-core fixture and the text-rendering fixture. Depends on
@@ -195,7 +213,7 @@ GAME_WIN_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_win_pattern.png
 # survive into this one: if the `test` prerequisite's own FILTER then
 # skips the fixture-writing test, decoding fails loudly on a missing
 # file instead of silently succeeding on last run's payload (review F9).
-.PHONY: view clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump
+.PHONY: view clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump
 clean-text-dump:
 	rm -f $(TEXT_DUMP)
 
@@ -208,13 +226,21 @@ clean-game-dump:
 clean-game-win-dump:
 	rm -f $(GAME_WIN_DUMP)
 
-view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump test
+clean-entry-dump:
+	rm -f $(ENTRY_DUMP)
+
+clean-table-dump:
+	rm -f $(TABLE_DUMP)
+
+view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump test
 	@mkdir -p $(BUILD_DIR)
 	python3 -B tools/fb_view.py $(FIXTURE_DUMP) $(VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TEXT_DUMP) $(TEXT_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TITLE_DUMP) $(TITLE_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(GAME_DUMP) $(GAME_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(GAME_WIN_DUMP) $(GAME_WIN_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(ENTRY_DUMP) $(ENTRY_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(TABLE_DUMP) $(TABLE_VIEWER_PNG)
 
 # Independent PNG-validity oracle (plan §1 Decision, risk R1/R2): confirms
 # a decoder that shares no code with fb_view.py's own reader can open the
