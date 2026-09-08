@@ -7,13 +7,16 @@ STEAMCORE_DIR := firmware/steamcore
 INC_DIR := $(STEAMCORE_DIR)/include
 SRC_DIR := $(STEAMCORE_DIR)/src
 TEST_DIR := $(STEAMCORE_DIR)/test
+GAMES_DIR := games
 
-# Exactly one include path: the public headers. Nothing in src/ or test/
-# needs an extra -I (quoted includes resolve relative to the including
-# file's own directory), and this is the concrete claim that makes "no
-# ESP-IDF header in logic code" compiler-enforced rather than a
-# convention (plan §1 Decision 2; review F12).
-CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -I$(INC_DIR)
+# Two include paths, not one, as of galactic-invasion (plan §1 Decision 1):
+# the engine's public headers, and games/ itself so a game includes its
+# own sibling files as "galactic_invasion/galactic_invasion.h" without an
+# engine header gaining reach into game code or vice versa. Quoted
+# includes still resolve relative to the including file first, so this
+# only matters for a game including another game's or its own top-level
+# header.
+CXXFLAGS := -std=c++17 -Wall -Wextra -Werror -I$(INC_DIR) -I$(GAMES_DIR)
 
 # The one literal for the committed dump fixture's path (docs/dump-format.md
 # "Fixture path"). C++ gets it via -D; Python gets it via the exported env
@@ -40,7 +43,18 @@ CXXFLAGS += -DSTEAMCORE_TEXT_DUMP='"$(TEXT_DUMP)"'
 TITLE_DUMP := $(BUILD_DIR)/title_screen_pattern.scfb
 CXXFLAGS += -DSTEAMCORE_TITLE_DUMP='"$(TITLE_DUMP)"'
 
+# Same reasoning and wiring as TEXT_DUMP/TITLE_DUMP above (galactic-
+# invasion T12): two uncommitted dumps, a mid-round PLAYING frame and the
+# win screen, both living in build/ and both cleaned before `view`'s own
+# `test` prerequisite runs so a FILTER'd `make view` can never decode a
+# stale file instead of failing loudly on a missing one.
+GAME_DUMP := $(BUILD_DIR)/galactic_invasion_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_GAME_DUMP='"$(GAME_DUMP)"'
+GAME_WIN_DUMP := $(BUILD_DIR)/galactic_invasion_win_pattern.scfb
+CXXFLAGS += -DSTEAMCORE_GAME_WIN_DUMP='"$(GAME_WIN_DUMP)"'
+
 ENGINE_SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+GAME_SRCS := $(wildcard $(GAMES_DIR)/*/*.cpp)
 TEST_SRCS := $(wildcard $(TEST_DIR)/*_test.cpp)
 HARNESS_SRCS := $(TEST_DIR)/test_harness.cpp $(TEST_DIR)/test_main.cpp
 
@@ -52,6 +66,7 @@ TEXT_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_text
 GAME_LOOP_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_game_loop
 TITLE_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_title_screen
 COLLISION_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_collision
+GAME_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_galactic_invasion
 
 # Every binary target below is itself .PHONY: its recipe runs on EVERY
 # invocation, unconditionally, regardless of any file mtime. This host
@@ -63,7 +78,7 @@ COLLISION_BENCH_BIN := $(BUILD_DIR)/steamcore_bench_collision
 # takes ~1.3s, which is cheap enough that giving up incremental caching
 # entirely is the right trade for a gate that must never report success
 # on code it did not actually just compile.
-.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN)
+.PHONY: $(TEST_BIN) $(SELFCHECK_BIN) $(ASAN_BIN) $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN)
 
 .PHONY: test
 test: $(TEST_BIN)
@@ -71,7 +86,7 @@ test: $(TEST_BIN)
 
 $(TEST_BIN):
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_SRCS) $(HARNESS_SRCS)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(GAME_SRCS) $(TEST_SRCS) $(HARNESS_SRCS)
 
 # Proves the harness itself fails loudly: builds a binary containing one
 # deliberate CHECK failure and asserts (a) it exits non-zero and (b) its
@@ -118,7 +133,7 @@ test-asan: $(ASAN_BIN)
 
 $(ASAN_BIN):
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(ASAN_FLAGS) -o $@ $(ENGINE_SRCS) $(TEST_SRCS) $(HARNESS_SRCS)
+	$(CXX) $(CXXFLAGS) $(ASAN_FLAGS) -o $@ $(ENGINE_SRCS) $(GAME_SRCS) $(TEST_SRCS) $(HARNESS_SRCS)
 
 # Real GCC coverage is unverified on this host — /usr/bin/g++ is Apple
 # clang (see docs/host-tests.md). CXX is overridable so a genuine GCC can
@@ -128,12 +143,13 @@ test-gcc:
 	$(MAKE) test CXX=g++
 
 .PHONY: bench
-bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN)
+bench: $(BENCH_BIN) $(TEXT_BENCH_BIN) $(GAME_LOOP_BENCH_BIN) $(TITLE_BENCH_BIN) $(COLLISION_BENCH_BIN) $(GAME_BENCH_BIN)
 	$(BENCH_BIN)
 	$(TEXT_BENCH_BIN)
 	$(GAME_LOOP_BENCH_BIN)
 	$(TITLE_BENCH_BIN)
 	$(COLLISION_BENCH_BIN)
+	$(GAME_BENCH_BIN)
 
 $(BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
@@ -155,9 +171,15 @@ $(COLLISION_BENCH_BIN):
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(TEST_DIR)/bench_collision.cpp
 
+$(GAME_BENCH_BIN):
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -O2 -o $@ $(ENGINE_SRCS) $(GAME_SRCS) $(TEST_DIR)/bench_galactic_invasion.cpp
+
 VIEWER_PNG := $(BUILD_DIR)/pattern.png
 TEXT_VIEWER_PNG := $(BUILD_DIR)/text_pattern.png
 TITLE_VIEWER_PNG := $(BUILD_DIR)/title_screen.png
+GAME_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_pattern.png
+GAME_WIN_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_win_pattern.png
 
 # US-5: one command from a clean checkout to viewable PNGs of the
 # rendering-core fixture and the text-rendering fixture. Depends on
@@ -173,18 +195,26 @@ TITLE_VIEWER_PNG := $(BUILD_DIR)/title_screen.png
 # survive into this one: if the `test` prerequisite's own FILTER then
 # skips the fixture-writing test, decoding fails loudly on a missing
 # file instead of silently succeeding on last run's payload (review F9).
-.PHONY: view clean-text-dump clean-title-dump
+.PHONY: view clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump
 clean-text-dump:
 	rm -f $(TEXT_DUMP)
 
 clean-title-dump:
 	rm -f $(TITLE_DUMP)
 
-view: clean-text-dump clean-title-dump test
+clean-game-dump:
+	rm -f $(GAME_DUMP)
+
+clean-game-win-dump:
+	rm -f $(GAME_WIN_DUMP)
+
+view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump test
 	@mkdir -p $(BUILD_DIR)
 	python3 -B tools/fb_view.py $(FIXTURE_DUMP) $(VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TEXT_DUMP) $(TEXT_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TITLE_DUMP) $(TITLE_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(GAME_DUMP) $(GAME_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(GAME_WIN_DUMP) $(GAME_WIN_VIEWER_PNG)
 
 # Independent PNG-validity oracle (plan §1 Decision, risk R1/R2): confirms
 # a decoder that shares no code with fb_view.py's own reader can open the

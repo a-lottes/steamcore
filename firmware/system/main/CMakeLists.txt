@@ -10,7 +10,9 @@
 # INCLUDE_DIRS: "../../steamcore/include" is the engine's public surface;
 # "../.." (i.e. firmware/) exists only so the device harness can reach
 # "steamcore/port/esp32/..." and the shared test fixture
-# "steamcore/test/fixture_pattern.h". Nothing else may rely on it.
+# "steamcore/test/fixture_pattern.h". "../../../games" mirrors the host
+# Makefile's own `-I$(GAMES_DIR)` so `#include "galactic_invasion/..."`
+# resolves identically on both toolchains (galactic-invasion T16).
 idf_component_register(
     SRCS "app_main.cpp"
          "../../steamcore/src/framebuffer.cpp"
@@ -24,6 +26,7 @@ idf_component_register(
          "../../steamcore/port/esp32/ili9488_display.cpp"
          "../../steamcore/port/esp32/gpio_input_source.cpp"
          "../../steamcore/port/esp32/analog_joystick_source.cpp"
-    INCLUDE_DIRS "." "../../steamcore/include" "../.."
+         "../../../games/galactic_invasion/galactic_invasion.cpp"
+    INCLUDE_DIRS "." "../../steamcore/include" "../.." "../../../games"
     REQUIRES driver esp_timer esp_adc
 )

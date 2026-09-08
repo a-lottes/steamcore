@@ -6,17 +6,20 @@ and watch it on the real ESP32-S3-N16R8 board. `docs/host-tests.md` covers
 everything that *can* run without the board.
 
 `firmware/system/main/app_main.cpp` currently runs the
-**analog-joystick-input** harness (plan.md T7): drives the real
-`AnalogJoystickSource` through the completely unmodified
-`InputReader<Source>`, logging raw ADC samples and button presses over
-serial — no panel, no `GameLoop`, nothing drawn. Flashing this build no
-longer runs the start-screen harness that produced v0.4.0's release
-evidence — that harness is throwaway by construction and its source is
-preserved verbatim in git history at the v0.4.0 tag (commit `a8e590f`), and
-`title_screen_harness_game.h` stays on disk (the same posture every prior
-harness swap took, most recently start-screen plan.md §1 Decision 8).
+**galactic-invasion** device-build-insurance harness (plan.md T16): drives
+a real `GalacticInvasion` through the completely unmodified
+`GameLoop<Game>`, pushed to the already-wired ILI9488 panel, with a
+synthetic `start` pulse (no buttons needed). This is compile insurance
+only — see "What's verified this way" below — not a claim that the game
+has been played on hardware. Flashing this build no longer runs the
+analog-joystick-input harness that produced v0.6.0's release evidence —
+that harness is throwaway by construction and its source is preserved
+verbatim in git history at the v0.6.0 tag, and every prior harness
+(`title_screen_harness_game.h`, and now `galactic_invasion_harness_game.h`)
+stays on disk (the same posture every prior harness swap took, most
+recently start-screen plan.md §1 Decision 8).
 
-## Reading the analog-joystick harness log
+## Reading the analog-joystick harness log (superseded, kept for history)
 
 Every tick (20 ms, `kTickDelayMs`), one line reports both axes' raw ADC
 counts alongside all four derived direction booleans:
@@ -226,3 +229,37 @@ SCFB-DUMP-END
    `PRESS START` at `(76, 112)` with the rest black, and the PLAYING image
    is fully black (AC-3.1) — and that the physical panel shows the same
    two screens and blanks when the synthetic `start` pulse fires.
+
+## galactic-invasion (T16): compile insurance, not a hardware claim
+
+Per CLAUDE.md's "a host-only module can still hide a device-build bug" —
+`font.cpp` passed every host gate for two whole features before anything on
+the device side first `#include`d it, and that first inclusion immediately
+surfaced two ESP-IDF-only incompatibilities (`throw` under
+`-fno-exceptions`, a `size_t` relying on a transitive `<cstddef>`) neither
+host compiler could ever have caught. T16 exists purely to close that same
+gap for this feature's own `constexpr` sprite-art validator
+(`games/galactic_invasion/galactic_invasion_art.h`) and its `collision.h`
+usage, before some future feature discovers an incompatibility there as an
+unplanned blocker.
+
+- `firmware/system/main/CMakeLists.txt` gains
+  `games/galactic_invasion/galactic_invasion.cpp` in `SRCS` and
+  `../../../games` in `INCLUDE_DIRS` (mirroring the host Makefile's own
+  `-I$(GAMES_DIR)`, so `#include "galactic_invasion/galactic_invasion.h"`
+  resolves identically on both toolchains).
+- `galactic_invasion_harness_game.h` wraps a real `GalacticInvasion`,
+  supplying a synthetic one-tick `start` pulse (`kSyntheticStartAtTick`,
+  same pattern as `title_screen_harness_game.h`) since `GameSession`
+  requires a rising edge, not a held level — no physical button is wired to
+  this harness.
+- **Verified this way:** `idf.py build` completes with no warnings and no
+  errors, which is this task's entire point — it is the first time this
+  feature's code is compiled by the ESP-IDF toolchain rather than only host
+  clang/g++.
+- **Explicitly not verified this way, and not claimed:** anything about how
+  the game actually plays, looks, or performs on the real board. This build
+  was not flashed and the harness was not run on hardware — no AC depends
+  on it (constitution §4 honest-status rule). `make test`/`test-asan`/
+  `test-gcc`/`make bench` (`docs/host-tests.md`) remain the source of every
+  correctness and performance claim this feature makes.

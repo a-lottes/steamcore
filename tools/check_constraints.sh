@@ -661,6 +661,138 @@ for f in $ANALOG_JOYSTICK_PIN_FILES; do
   fi
 done
 
+GAMES_DIR="games"
+GAME_DIR="$GAMES_DIR/galactic_invasion"
+GALACTIC_INVASION_SRC_FILES="$GAME_DIR/galactic_invasion.h $GAME_DIR/galactic_invasion.cpp $GAME_DIR/galactic_invasion_art.h"
+GALACTIC_INVASION_TEST_FILES="$TEST_DIR/galactic_invasion_test.cpp $TEST_DIR/galactic_invasion_art_test.cpp $TEST_DIR/galactic_invasion_formation_test.cpp $TEST_DIR/galactic_invasion_hud_test.cpp $TEST_DIR/galactic_invasion_projectile_test.cpp $TEST_DIR/galactic_invasion_combat_test.cpp $TEST_DIR/galactic_invasion_lives_test.cpp $TEST_DIR/galactic_invasion_round_test.cpp $TEST_DIR/galactic_invasion_determinism_test.cpp $TEST_DIR/galactic_invasion_enemy_fire_test.cpp $TEST_DIR/galactic_invasion_speedup_test.cpp $TEST_DIR/galactic_invasion_dump_test.cpp $TEST_DIR/galactic_invasion_fixture.h"
+GALACTIC_INVASION_DETERMINISM_FILES="$GALACTIC_INVASION_SRC_FILES $GALACTIC_INVASION_TEST_FILES"
+GALACTIC_INVASION_ALLOC_FILES="$GALACTIC_INVASION_DETERMINISM_FILES $TEST_DIR/bench_galactic_invasion.cpp"
+
+# Same missing-path/missing-file posture as every guard above (reviews
+# F15/F6): games/ was, until this task, an entirely unscanned tree -- a
+# grep against a missing directory or a renamed/deleted file must never
+# read as "no match".
+if [ ! -d "$GAMES_DIR" ]; then
+  report "expected directory '$GAMES_DIR' (relative to repo root) does not exist -- refusing to report a false OK"
+fi
+for f in $GALACTIC_INVASION_ALLOC_FILES; do
+  if [ ! -f "$f" ]; then
+    report "expected galactic-invasion file '$f' does not exist -- refusing to skip it silently"
+  fi
+done
+
+echo "--- no dynamic allocation in the galactic-invasion file set (NFR-2, extends the include/src grep to games/) ---"
+# games/ falls entirely outside the include/+src/ scan at the top of this
+# script (plan §1 Decision 1's own two-include-path split) -- this is that
+# gap closed, over the whole file set including the bench (a benchmark has
+# no more reason to allocate than the mechanism it measures, same posture
+# as every other feature's alloc-only list above).
+for f in $GALACTIC_INVASION_ALLOC_FILES; do
+  if grep -nHE "$SCOPED_ALLOC_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "dynamic allocation or a forbidden container/string/smart-pointer type was found above, in the galactic-invasion file set"
+  fi
+done
+
+echo "--- no ESP-IDF/FreeRTOS/driver header in games/ (galactic-invasion, constitution §4) ---"
+if grep -rnE '#include[[:space:]]*[<"](esp_[A-Za-z0-9_]*\.h|esp32s3/|freertos/|driver/|hal/|soc/|sdkconfig\.h|nvs_flash\.h)' \
+    "$GAMES_DIR"; then
+  report "an ESP-IDF/FreeRTOS/driver header was found in games/ -- game logic must stay hardware-free"
+fi
+
+echo "--- no resolution/tile-size literal in games/ (galactic-invasion, extends the include/src scan) ---"
+# kRngShiftBits = 16 is excluded by name, the same way this whole family
+# of checks excludes config.h's own definition of the tile size: it is an
+# LCG bit-shift width, not a tile dimension, and the two happening to
+# share a value is coincidental, not a drift risk (nothing here reads it
+# as a tile size, and nothing tile-sized reads it as a shift width).
+if grep -rnE --include='*.h' --include='*.cpp' '\b(240|160|480|320|16)\b' \
+    "$GAMES_DIR" \
+    | grep -v 'kRngShiftBits' \
+    | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "a resolution or tile-size literal (240/160/480/320/16) was found in games/, outside config.h"
+fi
+
+echo "--- no glyph-metric literal (8 or 43) outside font.h in games/ (galactic-invasion, extends text-rendering's NFR-4) ---"
+# Same awk-based approach as the text-rendering block above (character
+# literals in the sprite art's own row strings are never digit-shaped --
+# the compile-time validator only lets them contain ' '/'#' -- so no
+# character-literal strip is needed here the way font.cpp's glyph table
+# needed one; the strip is harmless to keep for consistency in case that
+# ever changes, so it is kept).
+#
+# Runs over the whole games/ tree via find, not the hardcoded
+# GALACTIC_INVASION_SRC_FILES list (review F7): every other rule in this
+# block already scans all of games/ via grep -r/--include, so a second
+# game's file would otherwise silently escape this one check alone --
+# exactly the "games/ is ungated" gap this whole block exists to close.
+if find "$GAMES_DIR" \( -name '*.h' -o -name '*.cpp' \) -print0 | \
+    xargs -0 awk -v q="'" '
+  /^[[:space:]]*\/\// { next }
+  {
+    stripped = $0
+    gsub(q "\\\\?." q, "", stripped)
+    if (stripped ~ /(^|[^0-9A-Za-z_])(8|43)([^0-9A-Za-z_]|$)/) {
+      printf "%s:%d:%s\n", FILENAME, FNR, $0
+      found = 1
+    }
+  }
+  END { exit(found ? 0 : 1) }
+'; then
+  report "a glyph-metric literal (8 or 43) was found outside font.h in games/ -- layout must be derived from font metrics (CLAUDE.md)"
+fi
+
+echo "--- no wall-clock read or unseeded RNG in the galactic-invasion mechanism (NFR-3) ---"
+# Same shared CLOCK_RNG_PATTERN as every other determinism-mechanism block
+# above. Deliberately excludes bench_galactic_invasion.cpp -- measuring
+# elapsed time with <chrono> is that file's entire legitimate purpose, the
+# same exemption bench_game_loop.cpp/bench_collision.cpp already have.
+for f in $GALACTIC_INVASION_DETERMINISM_FILES; do
+  if grep -nHE "$CLOCK_RNG_PATTERN" \
+      "$f" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+    report "a wall-clock read or unseeded RNG call was found above, in a file the galactic-invasion determinism guarantee (NFR-3, AC-3.4/AC-9.2/AC-10.7) depends on"
+  fi
+done
+
+echo "--- no fillRect( in games/ (galactic-invasion, structural half of AC-12.1) ---"
+# AC-12.1: every sprite renders as pixel-art via blit, never a filled
+# rectangle -- the inverse of start-screen's own "no setPixel/fillRect/
+# blit, draw only through drawText" rule, since this feature's whole point
+# is that it draws through blit (and drawText for the HUD/end screens),
+# never fillRect.
+if grep -rnHE '\bfillRect[[:space:]]*\(' \
+    "$GAMES_DIR" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "a fillRect( call was found in games/ -- galactic-invasion draws sprites only through blit (AC-12.1)"
+fi
+
+echo "--- no asset/PNG/TTF reference in games/ (galactic-invasion, AC-12.3/A14) ---"
+# AC-12.3/A14: every sprite is hand-authored Color-array literals in this
+# game's own source, font.cpp's GlyphArt convention -- no PNG decoding, no
+# runtime or build-time asset pipeline. Mirrors start-screen's own
+# AC-1.4 check.
+if grep -rnHE 'assets/|\.png|\.ttf' \
+    "$GAMES_DIR" | grep -vE ':[0-9]+:[[:space:]]*//'; then
+  report "an assets/, .png or .ttf reference was found in games/ -- sprites must be hand-authored Color-array literals, never a decoded asset (AC-12.3)"
+fi
+
+echo "--- galactic-invasion's win/loss width-margin and HUD disjointness static_asserts are present ---"
+# Presence, not correctness -- T9's host tests are what actually prove
+# AC-11.2's width margin and AC-7.2's disjointness; these only guard
+# against either being silently deleted, the same posture as every other
+# presence-only check above. Anchored on each assert's own message text
+# via grep -nHF (matches the wording verbatim, no regex metacharacter
+# escaping needed) plus the standard two-colon comment-line filter -- a
+# bare "static_assert" match would stay green even if the specific guard
+# named here were deleted, since both files have several others.
+if ! grep -nHF 'must differ by a visually' "$GAME_DIR/galactic_invasion.cpp" \
+    | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+  report "the win/loss text width-margin static_assert (AC-11.2) was not found in galactic_invasion.cpp -- it must not be deleted silently"
+fi
+if ! grep -nHF 'must not overlap' "$GAME_DIR/galactic_invasion.h" \
+    | grep -qvE ':[0-9]+:[[:space:]]*//'; then
+  report "the HUD/player-band disjointness static_asserts (AC-7.2) were not found in galactic_invasion.h -- they must not be deleted silently"
+fi
+
 echo "--- tools/*.py imports only from the standard library (constitution NFR-4) ---"
 # Allowlist, not a denylist: an unrecognised import fails closed rather
 # than trusting a list of known-bad packages we might not think of
