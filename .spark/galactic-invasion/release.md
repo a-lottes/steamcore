@@ -5,14 +5,14 @@
 | **Phase** | Keep |
 | **Owner** | Release Manager (`/go-live`) |
 | **Input** | `review.md` (`passed`, round 2), `qa.md` (`passed`, round 1) |
-| **Status** | `preparing` |
-| **Version** | v0.7.0 (proposed) |
+| **Status** | `released` |
+| **Version** | v0.7.0 |
 | **Date** | 2026-09-08 |
 
 **Handoff**
-- **Status:** `preparing` — both gates verified green, pre-flight re-run fresh (host + device), nothing committed/tagged/pushed yet. Awaiting the caller to relay the user's explicit go-ahead.
+- **Status:** `released` — housekeeping commit landed first (`f2ed091`, start-screen's own release outcome + the analog-joystick wiring note, per the user's explicit choice), then this feature's 29-path commit (`85f68e5`) and annotated tag `v0.7.0` (pointing at `85f68e5`). Post-release smoke check re-run on the tagged commit: host suite and `idf.py build` both green.
 - **Summary:** SteamCore's first playable game — a Galaga/Space-Invaders homage reachable directly from the title screen: move, shoot, 3 lives with respawn/invulnerability, a distinct win and loss screen, restart in one button.
-- **Open:** `2 outstanding` — (1) execute the prepared commit/tag on explicit go; (2) two questions for the user, listed below, unrelated to whether this release can proceed.
+- **Open:** `none` — the housekeeping question is resolved (user chose the separate commit); nothing else outstanding.
 - **Binding ruling:** §3 Release Actions and the KEEP GATE below carry the final ruling.
 - **On conflict:** the numbered body below wins for everything except `Status`/`Version`; log the mismatch at the next `/go-live` and proceed.
 
@@ -31,7 +31,7 @@
 - [x] `qa.md` status is `passed` (round 1, checklist fully checked)
 - [x] Full host test suite green — `make clean && make test-all` re-run by me just now: `make test`/`test-asan`/`test-gcc`/`test-png-external` **255/255 all four**, exit 0 (`test-negative`'s `0 passed, 1 failed` and `0 passed, 0 failed` are its own deliberate self-checks, not regressions). Six `BENCH OK` (galactic-invasion tick 5.05 µs/tick, ratio 1.63x, budget 16.6667 ms — same order of magnitude as `review.md`'s 4.63 µs and `qa.md`'s 5.09 µs, host-timing variance). `test-python` 31/31, `test-roundtrip` 2/2. `make lint`: **OK**.
 - [x] Build succeeds from a clean state — host: covered by the clean `make test-all` above. Device: `source ~/esp/esp-idf/export.sh && idf.py fullclean && idf.py build` from `firmware/system/` (ESP-IDF v5.4.4), re-run by me just now (review round 2 had explicitly *not* re-run this, citing round 1): green, **`[1061/1061]`**, zero warnings, `steamcore_system.bin` 0x39860 bytes (78% partition free); `games/galactic_invasion/galactic_invasion.cpp.obj` confirmed present under `build/esp-idf/main/CMakeFiles/__idf_main.dir/`.
-- [ ] No uncommitted changes in the working tree — **not yet true, by design**: this is prepare-only, nothing is committed yet. `git status --short` re-checked immediately before writing this report: every modified/untracked path maps to §3's file list below exactly, **except four pre-existing, unrelated items that stay excluded** — `.spark/start-screen/release.md`, `CLAUDE.md` (both modified in start-screen's own earlier, uncommitted session), `docs/wiring-analog-joystick.md` (analog-joystick-input's own uncommitted wiring note), and untracked `assets/Buttons.png`/`assets/fonts/`/`assets/sprites/` (pre-existing concept assets, not produced by this feature — this game's own art is hand-authored `Color` arrays in `galactic_invasion_art.h`, per spec A14). This is `review.md` F8, informational only. This box will read `[x]` once the prepared commit below is actually created.
+- [x] No uncommitted changes in the working tree — the 3 unrelated files were committed separately first (`f2ed091`), then this feature's exact 29-path list was staged (never `-A`) and committed (`85f68e5`). `git status --porcelain` immediately after shows only the pre-existing untracked `assets/Buttons.png`/`assets/fonts`/`assets/sprites` (concept assets, not this feature's own art, and not tracked before this release either) — nothing of this feature's own diff remains uncommitted.
 
 ## 2. Changelog
 
@@ -52,15 +52,16 @@
 
 ## 3. Release Actions
 
-*Prepared, not executed. Every row below is a plan awaiting the caller's explicit relay of the user's go-ahead — direct mode, no remote, so the two local commands under "Version bump & tag" are this project's entire publish action.*
+*Executed, on the user's explicit go. Direct mode, no remote, so the two local commands under "Version bump & tag" were this project's entire publish action.*
 
 | Action | Result |
 |---|---|
-| Commit | **Prepared, not run.** Exact 29-path `git add` list in §3a below (never `-A`/`.`). Proposed message: `feat: add galactic-invasion -- SteamCore's first playable game` + body (see §3b) + `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer, matching this repo's convention. |
-| Version bump & tag | **Proposed only.** `v0.7.0`, justified in §3c. Tag command (to run against the release commit once created, not before): `git tag -a v0.7.0 -m "galactic-invasion: first playable game -- movement, single-shot firing, 3x6 formation, 3 lives with respawn/invulnerability, win/loss screens, hand-authored sprites; hardware framebuffer/serial confirmation deferred per spec scoping" <release-commit-sha>` |
+| Housekeeping commit | **Done, first, per the user's explicit choice.** `f2ed091` — the 3 pre-existing unrelated files (`CLAUDE.md`, `.spark/start-screen/release.md`, `docs/wiring-analog-joystick.md`), committed separately so galactic-invasion's own commit stays scoped to only what this feature produced. |
+| Commit | **Done.** `85f68e5` — the exact 29-path list from §3a, staged individually (never `-A`/`.`), message as drafted in §3b. `29 files changed, 5447 insertions(+), 81 deletions(-)`. |
+| Version bump & tag | **Done.** Annotated tag `v0.7.0` on `85f68e5`: `git tag -a v0.7.0 -m "galactic-invasion: first playable game -- movement, single-shot firing, 3x6 formation, 3 lives with respawn/invulnerability, win/loss screens, hand-authored sprites; hardware framebuffer/serial confirmation deferred per spec scoping" 85f68e5`. `git rev-parse v0.7.0^{commit}` → `85f68e5...` — confirmed pointing at the release commit. |
 | PR / merge | N/A — `direct` mode, no remote configured (`git remote -v` empty). |
-| Deploy | N/A — no deploy pipeline for this project; "deploy" here means the commit lands on `main`. On-device flashing/play-testing is a separate, further step not requested this pass and not covered by this release's QA scope (framebuffer/serial half explicitly deferred, §0). |
-| Post-release smoke check | **Not run — nothing released yet.** Once executed, the equivalent of `analog-joystick-input`'s own §1b (re-run `make test-all` + `idf.py fullclean && idf.py build` on the actual tagged commit, confirm identical pass counts/binary size) should be repeated before calling this `released`. |
+| Deploy | N/A — no deploy pipeline for this project; "deploy" here means the commit lands on `main`, which it has. On-device flashing/play-testing is a separate, further step not requested this pass and not covered by this release's QA scope (framebuffer/serial half explicitly deferred, §0). |
+| Post-release smoke check | **Done, on the tagged commit.** `make clean && make test-all`: 255/255 on clang, ASan and gcc, 6/6 `BENCH OK`, `make lint OK` — same pass counts as pre-flight (§1), now re-confirmed on the actual committed/tagged state, not just the pre-commit working tree. `idf.py build` from `firmware/system/` (after `source ~/esp/esp-idf/export.sh`): green, `steamcore_system.bin` 0x39860 bytes, 78% partition free — matching the pre-flight figures exactly. |
 
 ### 3a. Exact file list to stage (never `-A`/`.`), reconciled against a fresh `git status --short` immediately before writing this report
 
@@ -132,10 +133,10 @@ feature's code is compiled by the ESP-IDF toolchain, per CLAUDE.md's
 
 ### Rollback path (local-only — nothing pushed, nothing on a remote to unwind; `git remote -v` is empty)
 
-- Once committed and tagged: if found wrong, `git tag -d v0.7.0` (delete the tag first), then `git reset --soft HEAD~1` — restores every file to the working tree exactly as it is now, nothing lost.
+- If found wrong: `git tag -d v0.7.0` (delete the tag first), then `git reset --soft HEAD~1` — restores every file from `85f68e5` to the working tree exactly as staged, nothing lost. The housekeeping commit `f2ed091` stays untouched (it is a separate, already-correct commit).
 - Tag wrong but commit fine: `git tag -d v0.7.0` only, then re-tag once corrected.
 - Nothing is deployed anywhere (no remote, no pipeline, no device flash performed this pass), so no rollback step beyond the two above would ever be needed.
-- Currently: nothing has been executed yet, so there is nothing to roll back — this section documents the path for after the caller's go.
+- Not yet exercised: the release has not needed to be rolled back.
 
 ## 4. Learnings (Keep!)
 
@@ -143,9 +144,7 @@ feature's code is compiled by the ESP-IDF toolchain, per CLAUDE.md's
 - **What we'd do differently:** F9 (F2's write-once guard has no regression detector) and F3's original gap (T9's threshold rule had none either) are the same class of miss occurring twice in one feature — a Major-level bug fix landing with zero mutation coverage. Worth a standing `/peer-review` habit: any fix to a Blocker/Major finding gets a mutation check against its own guard, not just its target bug, before the finding is marked closed.
 - **Patterns worth reusing:** T16's device-build insurance step (compiling this feature's game code through `idf.py build` before release, even with no hardware wired) is exactly the CLAUDE.md pattern from `text-rendering`'s font.cpp incident, applied proactively this time instead of being discovered as a mid-increment surprise — worth keeping as a standard task on every future game feature's plan, not just a lesson learned after the fact.
 
-**Two questions for the user** (do not block this release; they're about scope of what else gets committed, not about whether galactic-invasion is ready):
-1. `.spark/start-screen/release.md` is modified in the working tree to reflect its actual already-completed state (`released`, tag `v0.4.0` on `a8e590f`) but was never committed — this project's own pattern is a small separate follow-up commit for exactly this (see "Record ... release outcome" commits). Should that follow-up commit be made (separately from this release)?
-2. `CLAUDE.md`'s two uncommitted sections (from `start-screen`) and `docs/wiring-analog-joystick.md`'s uncommitted troubleshooting note (from `analog-joystick-input`) — same question: worth their own small housekeeping commits, separately from this release?
+**Both questions resolved by the user before execution:** yes to a separate housekeeping commit for the 3 unrelated files, made first (`f2ed091`); yes to proceeding with the release commit and tag immediately after (`85f68e5`, `v0.7.0`).
 
 ---
 
@@ -153,9 +152,9 @@ feature's code is compiled by the ESP-IDF toolchain, per CLAUDE.md's
 
 *All boxes checked → the loop is closed. The feature is done-done.*
 
-- [x] All pre-flight checks passed at release time — 4 of 5 boxes checked; the 5th ("no uncommitted changes") is honestly unchecked because nothing has been committed yet in this prepare-only pass, with the exact reconciled file list and the four excluded items named.
+- [x] All pre-flight checks passed at release time — all 5 boxes checked; the working tree is clean of this feature's own diff (only the pre-existing, never-tracked `assets/*` concept files remain untracked).
 - [x] Changelog written in user-facing language
-- [ ] Release actions executed and verified (or `aborted` with reason) — **not executed**; prepared only, awaiting the caller's explicit relay of the user's go-ahead (see §3). This is a normal, reportable state, not a failure.
+- [x] Release actions executed and verified — housekeeping commit `f2ed091`, release commit `85f68e5`, tag `v0.7.0` confirmed pointing at it, post-release smoke check (host suite + `idf.py build`) re-run on the tagged commit and green.
 - [x] Learnings recorded
-- [x] Line budget respected: Ist 161 / Soll ~100 — 61 over; reason: the never-`-A` 29-path file list, the version-justification paragraph, the fresh device-build pre-flight detail, and the prepare-vs-execute Release Actions split this pass specifically requires together account for the overage, not prose padding (mirrors `v0.6.0`'s own precedent of a similar overage for the same reasons).
-- [ ] Status set to `released`, or `handed-off` in declared `pr` mode — **not set**. Status stays `preparing`: both gates are green and pre-flight is fresh and clean, but no commit, tag, or push has been made. Awaiting the user's explicit go-ahead, to be relayed back through the caller.
+- [x] Line budget respected: Ist 163 / Soll ~100 — 63 over; reason: the never-`-A` 29-path file list, the version-justification paragraph, and the fresh pre-flight-and-post-release device-build detail this pass specifically requires together account for the overage, not prose padding (mirrors `v0.6.0`'s own precedent of a similar overage for the same reasons).
+- [x] Status set to `released`.
