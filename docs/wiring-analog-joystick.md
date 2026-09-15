@@ -110,3 +110,132 @@ confirmed with a multimeter and remains a hypothesis. Next step before
 retrying: verify continuity on every connection, especially the shared
 ground, then re-run the harness. T8 stays `blocked` until a stable reading
 is observed.
+
+As of 2026-09-15, the module and both discrete buttons have been rewired
+directly to the board (breadboard removed from the signal path) per the
+pin table above, to rule out the breadboard as the suspected common-cause
+fault. This was re-tested the same day (T7's harness, restored from commit
+`c5c01b0` and reflashed for this manual check only — not a source change,
+`app_main.cpp` reverted to `highscore-system`'s harness immediately after):
+
+- **`select` (joystick `SW`, GPIO21): confirmed working.** One clean
+  `pressed`/`released` pair was logged for a single deliberate press
+  (~180 ms apart), exactly the expected behaviour.
+- **`start` (Taster 1, GPIO47) and `fire` (Taster 2, GPIO8): still
+  faulty**, but with a new, more specific symptom than the breadboard
+  attempt — both logged `pressed` within the first 344 ms of boot and
+  never once logged `released` over the full ~200 s session, i.e. they
+  read permanently pressed regardless of the physical button. This is
+  the signature of a short rather than a flaky connection, and matches a
+  known 4-pin-tactile-switch mistake: if the two GPIO/GND wires land on
+  the *same* internally-bridged pin pair (rather than diagonal pins from
+  the two separate pairs), the switch reads permanently closed
+  independent of whether it's pressed. **Next step: re-check both
+  buttons' pin pairs with a multimeter continuity test** (unpressed
+  state should read open, not closed) before re-testing.
+- **`rawX`/`rawY`: still not usable**, and no longer intermittent like
+  the breadboard attempt — `rawX` stayed at a constant `0` for the
+  entire session (never tracked stick movement), `rawY` mostly sat at
+  `0` too with one brief transient up to `~188`. Neither axis approached
+  the expected ~2047 centred rest value or the 0–4095 sweep a moved
+  stick should produce. Since `select`'s clean result rules out a
+  shared-GND fault this time, this now looks like an independent problem
+  on `VRX`/`VRY` specifically (module wiring order, a bent/miswired pin,
+  or GPIO1/2 continuity) rather than the common-cause hypothesis from
+  the first attempt — not yet confirmed with a multimeter.
+
+A same-day follow-up fixed both discrete buttons (the 4-pin pin-pair
+mistake above was the actual cause) and added a second, no-multimeter
+diagnostic: a throwaway on-panel harness (not committed — see this
+section's history in git for its content if it needs re-creating) that
+draws each of the seven `GameInput` fields plus `rawX`/`rawY` live on the
+ILI9488 screen instead of the serial log, so a stuck or dead signal is
+visible without a second window. Result with this harness, module still
+on the documented 3.3V rail:
+
+- **Both discrete buttons: confirmed working.**
+- **The joystick module's `SW` and its two analog axes were never
+  observed working at the same time** — `SW` registered presses only
+  while the module was (experimentally, against this doc's own guidance)
+  powered from 5V instead of 3.3V, and the axes only produced a plausible
+  centred/sweeping reading while powered from 3.3V. **This is not being
+  adopted as "SW needs 5V"** — running the module at 5V risks exactly the
+  ADC damage this doc's Power rail section already warns about, and on
+  most 5-pin modules `SW`'s idle level is sourced from the same shared
+  VCC pin as the axes, so a 5V idle level on `SW` risks GPIO21 the same
+  way. The working hypothesis is that the axis behaviour at 5V is the
+  ADC clipping/saturating on out-of-range voltage (i.e. confirms *not* to
+  use 5V, rather than requiring it), and that `SW`'s failure at 3.3V is
+  an independent bad connection on that one leg — not yet isolated.
+  **Open, next step:** re-seat/re-check `SW`'s own wire at GPIO21 while
+  the module stays on 3.3V, then re-run the on-panel diagnostic; do not
+  re-apply 5V to chase this.
+
+A second same-day follow-up re-seated `SW`'s wire at GPIO21 (module still
+on 3.3V) and re-ran the on-panel diagnostic:
+
+- **Both discrete buttons and both analog axes: confirmed working
+  together at 3.3V** — `rawX`/`rawY` move plausibly with the stick and
+  the two buttons toggle cleanly. This resolves AC-3.1/AC-3.4's button
+  half and rules out a wiring-wide fault; the earlier 5V/3.3V split was
+  specific to `SW`, not shared by the rest of the circuit.
+- **`SW`: still not registering, unchanged by the re-seat.** Since a
+  reseat of the same physical wire made no difference, this is no longer
+  a "bad connection" hypothesis — the fault is more likely GPIO21 itself
+  or the module's click switch, not the joint between them.
+
+**The swap test (no multimeter needed) was run and is conclusive.** The
+physical Taster button swapped cleanly across both GPIO8 and GPIO21 —
+confirmed working on either pin. The joystick module's `SW` switch,
+swapped the same way across both pins, registered on **neither**. Since
+the same two GPIOs that just proved themselves good (with the Taster)
+fail identically with `SW`, the board side (both candidate pins, and by
+extension the internal pull-up path) is cleared — **the fault is
+isolated to the joystick module's `SW` switch or its own wire**, not to
+GPIO21 or to anything else already ruled out (breadboard, shared GND,
+5V/3.3V rail).
+
+**Next steps**, roughly in order of effort: (1) try swapping the actual
+jumper wire between the module's `SW` pin and the board for a
+known-good spare — a single broken strand inside a jumper wire is a
+common failure mode this test can't distinguish from a dead switch; (2)
+visually inspect the module's `SW` solder pad for a cracked/cold joint
+under good light or magnification; (3) if both come back clean, treat
+the module's built-in click switch as defective — at that point `SW` as
+a signal source is a hardware dead end on this specific module, and
+re-litigating A3's mapping (`SW` → `select`) against a spare discrete
+button becomes a product decision, not a wiring one.
+
+**A second, different joystick module was substituted and showed the
+identical failure** — `SW` still never registers, on either GPIO, while
+the plain Taster continues to work on both. Two independently defective
+switches is unlikely; this is now treated as a structural incompatibility
+between this class of module's `SW` output and this circuit (most likely
+the ESP32-S3's internal pull-up being too weak against some leakage path
+specific to the module's `SW` line — not confirmed, not worth further
+multimeter-less chasing) rather than a per-unit hardware defect.
+
+**Decision: `SW` is abandoned as a signal source.** The wiring reverts to
+exactly the pin table above minus `SW` — Taster 2 goes back to GPIO8
+(`fire`), Taster 1 stays on GPIO47 (`start`), `VRX`/`VRY` stay on GPIO1/2
+as documented, and the joystick module's `SW` wire is left disconnected
+rather than connected to any GPIO. `select` therefore has no physical
+input on this hardware and will always read `false` — this is not a crash
+or an unhandled case: `AnalogJoystickSource`/`InputReader` already treat
+an unpressed signal as the default steady state, the same fail-safe
+posture the doc's own ADC-failure case already documents for the axes.
+
+This is a hardware limitation being recorded, not a code change — no
+source in `firmware/` needs to change for `select` to simply stay
+unpressed. **Open product question, not decided here:** A3's mapping
+(`SW` → `select`) can no longer be fulfilled by this hardware; whether
+`select` gets reassigned to a third discrete button, or the product
+accepts running without a `select` input, is a spec-level call for
+`/story-time` or a plan amendment, not resolved by this wiring doc.
+
+T8: both discrete buttons and both analog axes are confirmed working at
+the documented, safe 3.3V supply (AC-3.1, AC-3.4's start/fire half).
+`SW`/`select` (the rest of AC-3.4) is not achievable with either tested
+module and is recorded here as a hardware limitation rather than left
+open-ended — `qa.md` should capture this exact split rather than a bare
+`blocked`.
