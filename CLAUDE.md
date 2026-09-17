@@ -126,3 +126,43 @@ stops being checked if the layout is ever reordered) and once as a
 runtime host test with its own independent intersection helper. Worth
 reusing for any future screen composed purely of `drawText`/`Sprite`
 elements.
+
+## A recurring `#if 0` needs its own explicit ruling, not an inherited one
+
+`galactic-invasion-artwork` disabled two behavioural tests for the same
+root cause (a shot overlapping a same-ink enemy composites to bytes
+identical to "no shot"): the first at T7, with an explicit user ruling
+("document as a known gap, close T7"); the second at T10, disabled under
+the same reasoning but **without asking again** — the assumption was that
+one ruling covered both. `/peer-review` caught the gap (F1): the second
+test had no recorded ruling of its own, only an inference from the first
+one's Deviations entry discussing a different test. The fix took one
+question; the miss cost a full review round.
+
+**Rule:** when a test gets `#if 0`-disabled for a reason the user already
+ruled on once this feature, don't treat that ruling as automatically
+covering the new occurrence — ask again, at the task that disables it,
+even if you're confident the answer will be the same. A ruling is scoped
+to the specific test it was given for, not to the root cause in the
+abstract.
+
+## Check for `script -q`'s doubled `\r\r\n` on a feature's first on-device capture
+
+Found in `galactic-invasion-artwork` T15 (see `docs/device-build.md`):
+capturing `idf.py monitor` output via `script -q <log> idf.py monitor` on
+this machine records every device line ending as `\r\r\n`, not `\n`.
+Python's universal-newline handling then splits that into a spurious
+empty line inside a captured block, and `tools/scfb_capture.py`'s block
+scanner (correctly, per its own contract) treats any non-hex line inside
+an SCFB block as corruption and silently discards the whole block — this
+surfaces as "no valid SCFB block found," not a wrong screen or an obvious
+truncation, so it reads like a capture failure rather than a known,
+fixable quirk.
+
+**Pattern:** on the *first* on-device serial capture of any future
+feature, if `scfb_capture.py` (or any other line-oriented parser reading
+a `script`-captured transcript) reports no valid data despite the
+markers clearly being present in the raw log, check for doubled `\r`
+before assuming the capture itself failed — strip `\r` from the raw
+bytes (`data.replace(b"\r", b"")`, not a text-mode re-read) and retry
+before spending time on a deeper diagnosis.
