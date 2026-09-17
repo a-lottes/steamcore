@@ -2,6 +2,7 @@
 
 #include "galactic_invasion/galactic_invasion.h"
 
+#include "galactic_invasion_fixture.h"
 #include "steamcore/color.h"
 #include "steamcore/dump_format.h"
 #include "steamcore/font.h"
@@ -35,6 +36,10 @@ using steamcore::games::kPlayerWidth;
 using steamcore::games::kPlayerY;
 using steamcore::games::kScoreGlyphCount;
 using steamcore::games::kScorePerKill;
+using steamcore::test::enemyShotThreatensColumn;
+using steamcore::test::EnemyShots;
+using steamcore::test::findEnemyShots;
+using steamcore::test::pointInsideAnyShot;
 
 namespace {
 
@@ -100,10 +105,19 @@ bool finalScoreTextIs(const Framebuffer& fb, const char* text) {
   return true;
 }
 
+// Excludes a located shot's own pixels (AC-2.8; since AC-3.10/D4 the
+// enemy shot is ORANGE too, no longer unique to the body) -- matters
+// here in particular, since driveToWin's own loop condition below relies
+// on this turning false only once every enemy is actually gone, not
+// merely once the last shot in flight clears.
 bool anyEnemyPixelOnScreen(const Framebuffer& fb) {
+  const EnemyShots shots = findEnemyShots(fb);
   for (int32_t y = 0; y < Framebuffer::height(); ++y) {
     for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-      if (fb.pixel(x, y) == Color::ORANGE) return true;
+      if (fb.pixel(x, y) == Color::ORANGE &&
+          !pointInsideAnyShot(shots, x, y)) {
+        return true;
+      }
     }
   }
   return false;
@@ -130,14 +144,8 @@ int32_t findPlayerXStrict(const Framebuffer& fb) {
   return minX;
 }
 
-bool enemyShotThreatensColumn(const Framebuffer& fb, int32_t x0, int32_t x1) {
-  for (int32_t y = 0; y < Framebuffer::height(); ++y) {
-    for (int32_t x = x0; x < x1; ++x) {
-      if (fb.pixel(x, y) == Color::DARK_ORANGE) return true;
-    }
-  }
-  return false;
-}
+// enemyShotThreatensColumn now lives in the fixture, template-matched
+// against kEnemyShotSprite instead of scanning for one ink.
 
 // Drives a fresh, already-PLAYING round to a genuine win, via
 // galactic_invasion_round_test.cpp's own shot-aware look-ahead sweep --

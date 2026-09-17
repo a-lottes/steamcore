@@ -1,9 +1,9 @@
 #include "galactic_invasion/galactic_invasion.h"
 
+#include "galactic_invasion/galactic_invasion_logo.h"
 #include "steamcore/color.h"
 #include "steamcore/font.h"
 #include "steamcore/text.h"
-#include "steamcore/title_screen.h"
 
 namespace steamcore::games {
 
@@ -141,7 +141,7 @@ void GalacticInvasion::render(Framebuffer& fb) {
   fb.clear(Color::BLACK);
   switch (session_.state()) {
     case GameState::READY:
-      drawTitleScreen(fb, session_.state());
+      drawGalacticInvasionLogo(fb, session_.state());
       break;
     case GameState::PLAYING: {
       for (const Enemy& e : enemies_) {

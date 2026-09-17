@@ -32,6 +32,7 @@ idf_component_register(
          "../../steamcore/port/esp32/analog_joystick_source.cpp"
          "../../steamcore/port/esp32/nvs_highscore_backend.cpp"
          "../../../games/galactic_invasion/galactic_invasion.cpp"
+         "../../../games/galactic_invasion/galactic_invasion_logo.cpp"
     INCLUDE_DIRS "." "../../steamcore/include" "../.." "../../../games"
     REQUIRES driver esp_timer esp_adc nvs_flash
 )

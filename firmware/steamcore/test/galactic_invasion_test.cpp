@@ -1,16 +1,16 @@
 #include "galactic_invasion/galactic_invasion.h"
 
+#include "galactic_invasion/galactic_invasion_logo.h"
 #include "galactic_invasion_fixture.h"
 #include "steamcore/game_loop.h"
 #include "steamcore/game_state.h"
-#include "steamcore/title_screen.h"
 #include "test_harness.h"
 
 using steamcore::Framebuffer;
 using steamcore::GameInput;
 using steamcore::GameLoop;
 using steamcore::GameState;
-using steamcore::drawTitleScreen;
+using steamcore::games::drawGalacticInvasionLogo;
 using steamcore::games::GalacticInvasion;
 using steamcore::games::kPlayerHeight;
 using steamcore::games::kPlayerSpeedX;
@@ -39,13 +39,16 @@ void enterPlaying(GameLoop<GalacticInvasion>& loop) {
 static_assert(sizeof(GameLoop<GalacticInvasion>) > 0,
               "GalacticInvasion must satisfy GameLoop<Game>'s Game concept");
 
-// AC-6.1: the READY frame composes the unmodified drawTitleScreen exactly
-// -- proven by comparing against a reference built by calling
-// drawTitleScreen directly, the same composition-level check
-// title_screen_harness_game.h's own pattern establishes. This is not
-// re-proving drawTitleScreen's own pixel content (start-screen already
-// did that); it proves GalacticInvasion delegates to it unmodified.
-STEAMCORE_TEST(galactic_invasion_ready_frame_composes_title_screen) {
+// AC-6.1 (galactic-invasion-artwork AC-1.1): the READY frame composes
+// this game's own drawGalacticInvasionLogo exactly -- proven by
+// comparing against a reference built by calling it directly, the same
+// composition-level check title_screen_harness_game.h's own pattern
+// establishes. This is not re-proving drawGalacticInvasionLogo's own
+// pixel content (galactic_invasion_logo_test.cpp already does that); it
+// proves GalacticInvasion delegates to it unmodified. Superseded here:
+// the engine's drawTitleScreen, this game's original READY renderer
+// before galactic-invasion-artwork (spec A1) gave the game its own logo.
+STEAMCORE_TEST(galactic_invasion_ready_frame_composes_its_own_logo_screen) {
   GalacticInvasion game;
   Framebuffer fb;
   GameLoop<GalacticInvasion> loop(game, fb);
@@ -53,7 +56,7 @@ STEAMCORE_TEST(galactic_invasion_ready_frame_composes_title_screen) {
   loop.tick(GameInput{});
 
   Framebuffer expected;
-  drawTitleScreen(expected, GameState::READY);
+  drawGalacticInvasionLogo(expected, GameState::READY);
 
   for (int32_t y = 0; y < Framebuffer::height(); ++y) {
     for (int32_t x = 0; x < Framebuffer::width(); ++x) {
@@ -74,22 +77,22 @@ STEAMCORE_TEST(galactic_invasion_start_rising_edge_enters_playing) {
   loop.tick(GameInput{});                    // settle at READY
   loop.tick(GameInput{/*start=*/true});      // rising edge
 
-  Framebuffer titleReference;
-  drawTitleScreen(titleReference, GameState::READY);
+  Framebuffer logoReference;
+  drawGalacticInvasionLogo(logoReference, GameState::READY);
 
   // PLAYING draws nothing yet (T1 stub) -- the frame must differ from
   // the READY frame, proving the state genuinely advanced rather than
   // the switch silently falling through to the same rendering.
-  bool differsFromTitle = false;
-  for (int32_t y = 0; y < Framebuffer::height() && !differsFromTitle; ++y) {
+  bool differsFromLogo = false;
+  for (int32_t y = 0; y < Framebuffer::height() && !differsFromLogo; ++y) {
     for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-      if (fb.pixel(x, y) != titleReference.pixel(x, y)) {
-        differsFromTitle = true;
+      if (fb.pixel(x, y) != logoReference.pixel(x, y)) {
+        differsFromLogo = true;
         break;
       }
     }
   }
-  CHECK(differsFromTitle);
+  CHECK(differsFromLogo);
 }
 
 // AC-1.1: one tick of `right` moves exactly +kPlayerSpeedX; one tick of

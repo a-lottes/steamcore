@@ -24,6 +24,9 @@ using steamcore::games::kLivesBounds;
 using steamcore::games::kPlayerHeight;
 using steamcore::games::kPlayerStartX;
 using steamcore::games::kPlayerY;
+using steamcore::test::EnemyShots;
+using steamcore::test::findEnemyShots;
+using steamcore::test::pointInsideAnyShot;
 
 namespace {
 
@@ -93,10 +96,19 @@ bool anyProjectilePixelOnScreen(const Framebuffer& fb) {
   return false;
 }
 
+// Since AC-3.10/D4 the enemy *shot* is ORANGE too (previously
+// DARK_ORANGE, unique to it) -- a raw ORANGE scan would misread a shot
+// in flight as more enemy body, so any pixel inside a located shot's
+// bounding box is excluded (AC-2.8), matching combat_test.cpp's own
+// migrated copy of this helper.
 bool anyEnemyPixelOnScreen(const Framebuffer& fb) {
+  const EnemyShots shots = findEnemyShots(fb);
   for (int32_t y = 0; y < Framebuffer::height(); ++y) {
     for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-      if (fb.pixel(x, y) == Color::ORANGE) return true;
+      if (fb.pixel(x, y) == Color::ORANGE &&
+          !pointInsideAnyShot(shots, x, y)) {
+        return true;
+      }
     }
   }
   return false;

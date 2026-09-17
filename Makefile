@@ -53,6 +53,14 @@ CXXFLAGS += -DSTEAMCORE_GAME_DUMP='"$(GAME_DUMP)"'
 GAME_WIN_DUMP := $(BUILD_DIR)/galactic_invasion_win_pattern.scfb
 CXXFLAGS += -DSTEAMCORE_GAME_WIN_DUMP='"$(GAME_WIN_DUMP)"'
 
+# Same reasoning and wiring as TITLE_DUMP/GAME_DUMP above
+# (galactic-invasion-artwork T13): this game's own READY screen (the
+# generated logo, not the engine's drawTitleScreen), handed to
+# /look-and-feel alongside GAME_DUMP's PLAYING frame for the design
+# judgement.
+GI_LOGO_DUMP := $(BUILD_DIR)/galactic_invasion_logo.scfb
+CXXFLAGS += -DSTEAMCORE_GI_LOGO_DUMP='"$(GI_LOGO_DUMP)"'
+
 # Same reasoning and wiring as GAME_DUMP/GAME_WIN_DUMP above
 # (highscore-system T10): two uncommitted dumps, the initials-entry screen
 # mid-entry and a full 5-row top-5 table, both cleaned before `view`'s own
@@ -198,6 +206,7 @@ GAME_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_pattern.png
 GAME_WIN_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_win_pattern.png
 ENTRY_VIEWER_PNG := $(BUILD_DIR)/highscore_entry_pattern.png
 TABLE_VIEWER_PNG := $(BUILD_DIR)/highscore_table_pattern.png
+GI_LOGO_VIEWER_PNG := $(BUILD_DIR)/galactic_invasion_logo.png
 
 # US-5: one command from a clean checkout to viewable PNGs of the
 # rendering-core fixture and the text-rendering fixture. Depends on
@@ -213,7 +222,7 @@ TABLE_VIEWER_PNG := $(BUILD_DIR)/highscore_table_pattern.png
 # survive into this one: if the `test` prerequisite's own FILTER then
 # skips the fixture-writing test, decoding fails loudly on a missing
 # file instead of silently succeeding on last run's payload (review F9).
-.PHONY: view clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump
+.PHONY: view clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump clean-gi-logo-dump
 clean-text-dump:
 	rm -f $(TEXT_DUMP)
 
@@ -232,7 +241,10 @@ clean-entry-dump:
 clean-table-dump:
 	rm -f $(TABLE_DUMP)
 
-view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump test
+clean-gi-logo-dump:
+	rm -f $(GI_LOGO_DUMP)
+
+view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean-entry-dump clean-table-dump clean-gi-logo-dump test
 	@mkdir -p $(BUILD_DIR)
 	python3 -B tools/fb_view.py $(FIXTURE_DUMP) $(VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TEXT_DUMP) $(TEXT_VIEWER_PNG)
@@ -241,6 +253,7 @@ view: clean-text-dump clean-title-dump clean-game-dump clean-game-win-dump clean
 	python3 -B tools/fb_view.py $(GAME_WIN_DUMP) $(GAME_WIN_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(ENTRY_DUMP) $(ENTRY_VIEWER_PNG)
 	python3 -B tools/fb_view.py $(TABLE_DUMP) $(TABLE_VIEWER_PNG)
+	python3 -B tools/fb_view.py $(GI_LOGO_DUMP) $(GI_LOGO_VIEWER_PNG)
 
 # Independent PNG-validity oracle (plan §1 Decision, risk R1/R2): confirms
 # a decoder that shares no code with fb_view.py's own reader can open the

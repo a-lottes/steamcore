@@ -663,8 +663,8 @@ done
 
 GAMES_DIR="games"
 GAME_DIR="$GAMES_DIR/galactic_invasion"
-GALACTIC_INVASION_SRC_FILES="$GAME_DIR/galactic_invasion.h $GAME_DIR/galactic_invasion.cpp $GAME_DIR/galactic_invasion_art.h"
-GALACTIC_INVASION_TEST_FILES="$TEST_DIR/galactic_invasion_test.cpp $TEST_DIR/galactic_invasion_art_test.cpp $TEST_DIR/galactic_invasion_formation_test.cpp $TEST_DIR/galactic_invasion_hud_test.cpp $TEST_DIR/galactic_invasion_projectile_test.cpp $TEST_DIR/galactic_invasion_combat_test.cpp $TEST_DIR/galactic_invasion_lives_test.cpp $TEST_DIR/galactic_invasion_round_test.cpp $TEST_DIR/galactic_invasion_determinism_test.cpp $TEST_DIR/galactic_invasion_enemy_fire_test.cpp $TEST_DIR/galactic_invasion_speedup_test.cpp $TEST_DIR/galactic_invasion_dump_test.cpp $TEST_DIR/galactic_invasion_fixture.h"
+GALACTIC_INVASION_SRC_FILES="$GAME_DIR/galactic_invasion.h $GAME_DIR/galactic_invasion.cpp $GAME_DIR/galactic_invasion_art.h $GAME_DIR/galactic_invasion_logo.h $GAME_DIR/galactic_invasion_logo.cpp $GAME_DIR/galactic_invasion_generated_art.h"
+GALACTIC_INVASION_TEST_FILES="$TEST_DIR/galactic_invasion_test.cpp $TEST_DIR/galactic_invasion_art_test.cpp $TEST_DIR/galactic_invasion_formation_test.cpp $TEST_DIR/galactic_invasion_hud_test.cpp $TEST_DIR/galactic_invasion_projectile_test.cpp $TEST_DIR/galactic_invasion_combat_test.cpp $TEST_DIR/galactic_invasion_lives_test.cpp $TEST_DIR/galactic_invasion_round_test.cpp $TEST_DIR/galactic_invasion_determinism_test.cpp $TEST_DIR/galactic_invasion_enemy_fire_test.cpp $TEST_DIR/galactic_invasion_speedup_test.cpp $TEST_DIR/galactic_invasion_dump_test.cpp $TEST_DIR/galactic_invasion_fixture.h $TEST_DIR/galactic_invasion_logo_test.cpp $TEST_DIR/galactic_invasion_logo_dump_test.cpp"
 GALACTIC_INVASION_DETERMINISM_FILES="$GALACTIC_INVASION_SRC_FILES $GALACTIC_INVASION_TEST_FILES"
 GALACTIC_INVASION_ALLOC_FILES="$GALACTIC_INVASION_DETERMINISM_FILES $TEST_DIR/bench_galactic_invasion.cpp"
 
@@ -680,6 +680,41 @@ for f in $GALACTIC_INVASION_ALLOC_FILES; do
     report "expected galactic-invasion file '$f' does not exist -- refusing to skip it silently"
   fi
 done
+
+echo "--- galactic-invasion-artwork provenance: generated art still matches its committed source (A13, warning only) ---"
+# AC-3.9/A13: a deliberate, user-approved departure from every other rule
+# in this file -- drift here is reported, never gated. The generated
+# header's own banner records the source's sha256 at generation time
+# (AC-3.4); this recomputes it now and compares. A mismatch means someone
+# edited assets/sprites/galactic_invation.png without regenerating (or
+# hand-edited the header, invisible to this check by construction --
+# AC-3.4's "do not edit by hand" banner is the only guard against that
+# half). Skipped, not failed, when the asset is absent (AC-3.2 requires
+# the whole gate to pass with assets/ moved aside) or python3 is
+# unavailable -- both named explicitly, never a silent pass.
+ARTWORK_ASSET_SOURCE="assets/sprites/galactic_invation.png"
+ARTWORK_GENERATED_HEADER="$GAME_DIR/galactic_invasion_generated_art.h"
+if [ ! -f "$ARTWORK_ASSET_SOURCE" ]; then
+  echo "check_constraints: provenance check skipped -- $ARTWORK_ASSET_SOURCE is absent"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "check_constraints: provenance check skipped -- python3 is not available"
+elif [ ! -f "$ARTWORK_GENERATED_HEADER" ]; then
+  report "expected generated art header '$ARTWORK_GENERATED_HEADER' does not exist -- refusing to skip the provenance check silently"
+else
+  artwork_actual_hash=$(python3 tools/generate_sprite_data.py \
+      --print-source-hash "$ARTWORK_ASSET_SOURCE" 2>/dev/null)
+  if [ -z "$artwork_actual_hash" ]; then
+    report "could not compute a source hash for $ARTWORK_ASSET_SOURCE via 'python3 tools/generate_sprite_data.py --print-source-hash'"
+  else
+    artwork_recorded_hash=$(grep -oE '^// Source sha256: [0-9a-f]+' \
+        "$ARTWORK_GENERATED_HEADER" | awk '{print $NF}')
+    if [ -z "$artwork_recorded_hash" ]; then
+      report "no '// Source sha256: <hash>' banner line found in $ARTWORK_GENERATED_HEADER -- refusing to skip the provenance check silently"
+    elif [ "$artwork_actual_hash" != "$artwork_recorded_hash" ]; then
+      echo "check_constraints: PROVENANCE WARNING: $ARTWORK_GENERATED_HEADER (recorded sha256 $artwork_recorded_hash, current source sha256 $artwork_actual_hash -- regenerate with the command in this file's own banner)"
+    fi
+  fi
+fi
 
 echo "--- no dynamic allocation in the galactic-invasion file set (NFR-2, extends the include/src grep to games/) ---"
 # games/ falls entirely outside the include/+src/ scan at the top of this
@@ -906,7 +941,7 @@ echo "--- tools/*.py imports only from the standard library (constitution NFR-4)
 # than trusting a list of known-bad packages we might not think of
 # (spec A5/C8 -- no pip install, no Pillow). "fb_view" is this project's
 # own local module, not a stdlib one, and is allowed for that reason.
-PY_ALLOWED_IMPORTS="argparse os re struct subprocess sys tempfile time unittest zlib fb_view scfb_capture __future__"
+PY_ALLOWED_IMPORTS="argparse collections hashlib os re struct subprocess sys tempfile time unittest zlib fb_view scfb_capture generate_sprite_data __future__"
 # Matching must not be anchored to column 0 and must split a comma list:
 # an indented `import requests` (inside a function or a
 # `try:`/`except ImportError:` block -- the canonical way an optional

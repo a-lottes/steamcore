@@ -74,6 +74,30 @@ double measureTicks(int32_t ticks) {
   return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
+// galactic-invasion-artwork T11/NFR-1: the READY screen's own cost --
+// one logo blit (up to 200x56) plus one drawText call, never PLAYING's
+// dozens of sprites. Held in READY the whole run (input.start always
+// false), so this measures a case measureTicks() above never reaches on
+// its own. Same sink technique as measureTicks: the compiler cannot
+// constant-fold a runtime Framebuffer read regardless of which pixel is
+// read, so this deliberately reuses (0,0) rather than assuming exactly
+// where inside kLogoBounds the generated art happens to be lit.
+double measureReadyTicks(int32_t ticks) {
+  GalacticInvasion game;
+  Framebuffer fb;
+  GameLoop<GalacticInvasion> loop(game, fb);
+
+  volatile int64_t sink = 0;
+  const auto start = Clock::now();
+  for (int32_t i = 0; i < ticks; ++i) {
+    loop.tick(GameInput{});
+    sink += fb.pixel(0, 0) != Color::BLACK ? 1 : 0;
+  }
+  const auto end = Clock::now();
+  (void)sink;
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
 }  // namespace
 
 int main() {
@@ -108,6 +132,36 @@ int main() {
         "BENCH FAILED: one tick (%.4f ms) exceeded the 16.667 ms 60 Hz "
         "budget\n",
         usPerTick / 1000.0);
+    ok = false;
+  }
+
+  const double readyMsAtN = measureReadyTicks(kTicks);
+  const double readyMsAt2N = measureReadyTicks(2 * kTicks);
+  const double readyRatio =
+      readyMsAt2N / (readyMsAtN > 0.0 ? readyMsAtN : 1e-9);
+  const double readyUsPerTick =
+      (readyMsAt2N * 1000.0) / static_cast<double>(2 * kTicks);
+
+  std::printf(
+      "galactic-invasion READY tick: %.2f us/tick over %d ticks (doubled "
+      "to %d: %.4f ms -> %.4f ms, ratio %.2fx; budget: < %.4f ms/tick, 60 "
+      "Hz NFR-1)\n",
+      readyUsPerTick, kTicks, 2 * kTicks, readyMsAtN, readyMsAt2N,
+      readyRatio, kTickBudgetMs);
+
+  if (readyRatio < 1.3 || readyRatio > 3.5) {
+    std::printf(
+        "BENCH FAILED: READY tick() time did not scale roughly linearly "
+        "with tick count (ratio %.2fx) -- the loop may have been "
+        "optimized away\n",
+        readyRatio);
+    ok = false;
+  }
+  if (readyUsPerTick / 1000.0 >= kTickBudgetMs) {
+    std::printf(
+        "BENCH FAILED: one READY tick (%.4f ms) exceeded the 16.667 ms "
+        "60 Hz budget\n",
+        readyUsPerTick / 1000.0);
     ok = false;
   }
 

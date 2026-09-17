@@ -27,8 +27,12 @@ using steamcore::games::kScoreBounds;
 using steamcore::games::kScorePerKill;
 using steamcore::games::kStepTicksMin;
 using steamcore::games::stepIntervalTicks;
+using steamcore::test::EnemyShots;
+using steamcore::test::findEnemyShots;
 using steamcore::test::findFormationBounds;
+using steamcore::test::pointInsideAnyShot;
 using steamcore::test::FormationBounds;
+using steamcore::test::enemyShotThreatensColumn;
 using steamcore::test::framebuffersEqual;
 
 namespace {
@@ -66,23 +70,23 @@ bool scoreTextIs(const Framebuffer& fb, const char* text) {
   return true;
 }
 
+// Excludes a located shot's own pixels (AC-2.8; since AC-3.10/D4 the
+// enemy shot is ORANGE too, no longer unique to the body).
 bool anyEnemyPixelOnScreen(const Framebuffer& fb) {
+  const EnemyShots shots = findEnemyShots(fb);
   for (int32_t y = 0; y < Framebuffer::height(); ++y) {
     for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-      if (fb.pixel(x, y) == Color::ORANGE) return true;
+      if (fb.pixel(x, y) == Color::ORANGE &&
+          !pointInsideAnyShot(shots, x, y)) {
+        return true;
+      }
     }
   }
   return false;
 }
 
-bool enemyShotThreatensColumn(const Framebuffer& fb, int32_t x0, int32_t x1) {
-  for (int32_t y = 0; y < Framebuffer::height(); ++y) {
-    for (int32_t x = x0; x < x1; ++x) {
-      if (fb.pixel(x, y) == Color::DARK_ORANGE) return true;
-    }
-  }
-  return false;
-}
+// enemyShotThreatensColumn now lives in the fixture, template-matched
+// against kEnemyShotSprite instead of scanning for one ink.
 
 // Color-specific (BRIGHT_ORANGE, not the fixture's plain != BLACK) so an
 // enemy sprite (Color::ORANGE) sharing the player's row band is never

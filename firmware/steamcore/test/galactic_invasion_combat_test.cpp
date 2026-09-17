@@ -33,7 +33,10 @@ using steamcore::games::kPlayerY;
 using steamcore::games::kProjectileHeight;
 using steamcore::games::kProjectileWidth;
 using steamcore::games::kScoreBounds;
+using steamcore::test::EnemyShots;
+using steamcore::test::findEnemyShots;
 using steamcore::test::findPlayerSpriteX;
+using steamcore::test::pointInsideAnyShot;
 
 namespace {
 
@@ -203,29 +206,42 @@ STEAMCORE_TEST(galactic_invasion_clearing_every_enemy_wins) {
   GameLoop<GalacticInvasion> loop(game, fb);
   enterPlaying(loop);
 
-  // Color::ORANGE is the enemy sprite's own colour and nothing else in
-  // this game ever uses it (the player/projectile/text are all
-  // BRIGHT_ORANGE) -- scanning for it specifically survives the
-  // transition into GAME_OVER correctly, unlike the shared
-  // findFormationBounds fixture helper, whose `!= BLACK` scan over
-  // [kFormationStartY, kFormationThresholdY) would otherwise pick up the
-  // "GAME OVER" text's own BRIGHT_ORANGE pixels, which happen to fall
-  // inside that same y-band, and misread them as "formation still there".
+  // Color::ORANGE is the enemy side's identity ink -- scanning for it
+  // specifically survives the transition into GAME_OVER correctly,
+  // unlike the shared findFormationBounds fixture helper, whose
+  // `!= BLACK` scan over [kFormationStartY, kFormationThresholdY) would
+  // otherwise pick up the "GAME OVER" text's own BRIGHT_ORANGE pixels,
+  // which happen to fall inside that same y-band, and misread them as
+  // "formation still there". Since AC-3.10/D4, the enemy *shot* is
+  // ORANGE too (previously DARK_ORANGE, unique to it) -- a raw ORANGE
+  // scan would misread a shot in flight as more enemy body, so any pixel
+  // inside a located shot's bounding box is excluded (AC-2.8).
   auto anyEnemyPixelOnScreen = [&fb]() {
+    const EnemyShots shots = findEnemyShots(fb);
     for (int32_t y = 0; y < Framebuffer::height(); ++y) {
       for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-        if (fb.pixel(x, y) == Color::ORANGE) return true;
+        if (fb.pixel(x, y) == Color::ORANGE &&
+            !pointInsideAnyShot(shots, x, y)) {
+          return true;
+        }
       }
     }
     return false;
   };
-  // The lowest y at which any Color::ORANGE pixel currently renders, or -1
-  // if none do -- tracks how close the formation's leading edge has come
-  // to the player's row.
+  // The lowest y at which any enemy-body Color::ORANGE pixel currently
+  // renders, or -1 if none do -- tracks how close the formation's
+  // leading edge has come to the player's row. Shot pixels excluded for
+  // the same reason as anyEnemyPixelOnScreen above: a shot travelling
+  // toward the player would otherwise be misread as the formation itself
+  // having descended that far.
   auto lowestEnemyY = [&fb]() {
+    const EnemyShots shots = findEnemyShots(fb);
     for (int32_t y = Framebuffer::height() - 1; y >= 0; --y) {
       for (int32_t x = 0; x < Framebuffer::width(); ++x) {
-        if (fb.pixel(x, y) == Color::ORANGE) return y;
+        if (fb.pixel(x, y) == Color::ORANGE &&
+            !pointInsideAnyShot(shots, x, y)) {
+          return y;
+        }
       }
     }
     return -1;

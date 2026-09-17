@@ -261,6 +261,23 @@ SCFB-DUMP-END
    is fully black (AC-3.1) — and that the physical panel shows the same
    two screens and blanks when the synthetic `start` pulse fires.
 
+### `script -q`'s doubled `\r` (found galactic-invasion-artwork T15)
+
+A transcript captured via `script -q <log> idf.py -p <port> monitor` on
+this machine records every device line ending as `\r\r\n`, not `\n` —
+the extra `\r` is `script`'s own capture of the PTY, not something the
+firmware or `idf.py monitor` adds deliberately. Python's universal-
+newline handling then splits that into a real content line *plus* a
+spurious empty line, and `scfb_capture.py`'s block scanner treats any
+non-hex line inside a block (an empty one included) as a corrupt block
+and discards it — so a raw `script` capture silently decodes to "no
+valid SCFB block found," not a truncation or a wrong screen. Fix: strip
+every `\r` byte from the captured file before handing it to
+`scfb_capture.py` (`data.replace(b"\r", b"")` on the raw bytes, not a
+text-mode read, since the doubled `\r` is exactly what universal
+newlines would otherwise mis-split) — `scfb_capture.py` doesn't do this
+itself, so it's a capture-side step, not a tool bug.
+
 ## galactic-invasion (T16): compile insurance, not a hardware claim
 
 Per CLAUDE.md's "a host-only module can still hide a device-build bug" —

@@ -5,23 +5,49 @@
 #include <cstdint>
 #include <cstdlib>
 
+#include "galactic_invasion/galactic_invasion_generated_art.h"
 #include "steamcore/color.h"
 #include "steamcore/sprite.h"
 
-// The three hand-authored pixel-art sprites this game ships, in exactly
-// font.cpp's own convention (galactic-invasion plan §1 Decision 10):
-// picture rows written as ' '/'#' string literals, converted to Color by
-// a constexpr function, validated at compile time. No PNG decoding, no
-// runtime asset pipeline, no build-time tool (spec A14).
+// The four pixel-art sprites this game ships, in exactly font.cpp's own
+// row-string convention (galactic-invasion plan §1 Decision 10): picture
+// rows written as string literals, converted to Color by a constexpr
+// function, validated at compile time. No PNG decoding, no runtime
+// asset pipeline, and no build-time tool are ever part of the firmware
+// build (galactic-invasion-artwork AC-3.2) -- that holds regardless of
+// which of the two routes below a sprite's *data* actually took.
 //
-// One on-colour per sprite, not per-pixel shading -- identity comes from
-// silhouette alone (AC-12.4, constitution §6 "clear silhouettes"):
-// player BRIGHT_ORANGE (a vertically-symmetric wedge, narrow at the nose,
-// wide at the base -- "this is the thing I steer"), enemy ORANGE (a
-// horizontally-symmetric blocky/notched invader profile with antennae
-// and legs -- the opposite shape family from the ship), projectile
-// BRIGHT_ORANGE (a slim 2-wide bar -- a different aspect ratio from
-// both, so its motion reads as "a shot" at a glance).
+// Two routes coexist here (galactic-invasion-artwork plan §1 decisions
+// 2/6). The player sprite is sourced from tools/generate_sprite_data.py's
+// generated header (galactic_invasion_generated_art.h, T9) -- a
+// generated sprite is expressed in this exact row-string convention too,
+// just produced by a tool run instead of typed by hand. The enemy and
+// both shots are hand-authored (AC-3.11) here directly: the enemy was
+// generated and adopted in T10 (its FIGHTER-derived silhouette passed
+// the ≥2-outline-concavities mechanical gate), then reverted in T13
+// after `/look-and-feel`'s design review found it failed AC-2.4a's
+// qualitative "opposite family from the player" read -- the generated
+// shape was a symmetric diamond sharing the player's own bilateral
+// symmetry, not the horizontally-elongated, notched silhouette the
+// shipped invader (this project's original release) already had. Kept
+// per AC-2.7 and brought into this feature's shading language by hand
+// (a DARK_ORANGE interior core, ORANGE outline) rather than shipped
+// unchanged. The two shots stay hand-authored and always will be: each
+// is 2x6 = twelve cells, too small for a downscale to derive anything a
+// human wouldn't type faster directly.
+//
+// Shading: up to three of the four palette inks are allowed per sprite
+// (spec A7), under one outline/interior split that never moves
+// (AC-2.3) -- BRIGHT_ORANGE marks the player side's silhouette,
+// ORANGE the enemy side's, and DARK_ORANGE is interior-only, never on a
+// sprite narrower than 3px (a 2-wide shot has no interior at all). Both
+// shots stay flat and single-ink by design (AC-2.6): twelve cells carry
+// no shading. Identity for the 2x6 pair comes from silhouette, not
+// colour alone (AC-3.10/AC-2.4a): the enemy shot's silhouette is
+// deliberately segmented, unlike the player shot's solid bar -- ORANGE
+// was chosen for it over the shipped game's original DARK_ORANGE
+// because 1.594:1 contrast is below every floor for the one object the
+// player must react to (AC-3.10/NFR-7).
 
 namespace steamcore::games {
 
@@ -35,39 +61,56 @@ inline constexpr int32_t kProjectileHeight = 6;
 namespace detail {
 
 // clang-format off
-inline constexpr const char* kPlayerRows[kPlayerHeight] = {
-    "     ##     ",
-    "     ##     ",
-    "    ####    ",
-    "    ####    ",
-    "   ######   ",
-    "   ######   ",
-    "  ########  ",
-    "  ########  ",
-    " ########## ",
-    " ########## ",
-    "############",
-    "############",
-};
-
+// Hand-authored, not generated (AC-3.11): the shipped invader silhouette
+// (this project's original release) reinstated after T13's
+// `/look-and-feel` review rejected the T10-adopted generated version on
+// AC-2.4a's qualitative "opposite family from the player" clause (see
+// the file-level comment above) -- horizontally-symmetric, notched
+// antennae/shoulders/legs, unchanged from the original shape. '#' marks
+// the ORANGE outline, '+' a DARK_ORANGE interior core (rows 3-7, cols
+// 4-7, a contiguous 4x5 block, comfortably inside AC-2.10(i)'s
+// bounding-box ring and D6's >=3px-wide rule) -- the one edit AC-2.7
+// calls for: bringing hand-authored art into this feature's shading
+// language without regenerating it.
 inline constexpr const char* kEnemyRows[kEnemyHeight] = {
     "  ##    ##  ",
     "   ######   ",
     "  ########  ",
-    " ########## ",
-    "############",
-    "############",
-    "## ###### ##",
-    "##  ####  ##",
+    " ###++++### ",
+    "####++++####",
+    "####++++####",
+    "## #++++# ##",
+    "##  ++++  ##",
     "  ##    ##  ",
     " ##      ## ",
 };
 
+// Hand-authored, not generated (AC-3.11): twelve cells leave nothing to
+// derive. Kept as the shipped solid bar (AC-2.7) -- flat, one ink,
+// categorically (AC-2.6).
 inline constexpr const char* kProjectileRows[kProjectileHeight] = {
     "##",
     "##",
     "##",
     "##",
+    "##",
+    "##",
+};
+
+// Hand-authored, not generated (AC-3.11): twelve cells leave nothing to
+// derive. Deliberately segmented rather than reusing kProjectileRows
+// (AC-3.10) -- with the player shot now BRIGHT_ORANGE-exclusive and the
+// enemy shot ORANGE, colour alone already separates the two on this
+// hardware, but AC-2.4a and NFR-7 both require the pair to stay
+// distinguishable with colour ignored entirely, and a 2-wide sprite has
+// no interior to shade (AC-2.3). A silhouette split is therefore the
+// only tool left, and the only one that survives a monochrome or
+// colour-blind read of the screen.
+inline constexpr const char* kEnemyShotRows[kProjectileHeight] = {
+    "##",
+    "##",
+    "  ",
+    "  ",
     "##",
     "##",
 };
@@ -109,17 +152,22 @@ constexpr Color spritePixel(const char* row, int32_t col, int32_t width,
   return Color::BLACK;
 }
 
-constexpr std::array<Color, kPlayerWidth * kPlayerHeight> buildPlayerSprite() {
-  std::array<Color, kPlayerWidth * kPlayerHeight> pixels{};
-  int32_t offset = 0;
-  for (int32_t row = 0; row < kPlayerHeight; ++row) {
-    for (int32_t col = 0; col < kPlayerWidth; ++col) {
-      pixels[static_cast<size_t>(offset++)] =
-          spritePixel(kPlayerRows[row], col, kPlayerWidth,
-                      Color::BRIGHT_ORANGE);
-    }
+// Two-ink variant of spritePixel above, for kEnemyRows' shading (T13):
+// '#' is the outline ink, '+' the interior one, ' ' stays BLACK. Every
+// other row array in this file uses spritePixel's single-ink form, so
+// this stays local to the one sprite that needs it rather than widening
+// spritePixel itself and touching every other call site.
+constexpr Color spritePixel2(const char* row, int32_t col, int32_t width,
+                              Color outlineOn, Color interiorOn) {
+  if (!rowIsExactWidth(row, width)) {
+    reportInvalidSpriteArt();
+    return Color::BLACK;
   }
-  return pixels;
+  if (row[col] == '#') return outlineOn;
+  if (row[col] == '+') return interiorOn;
+  if (row[col] == ' ') return Color::BLACK;
+  reportInvalidSpriteArt();
+  return Color::BLACK;
 }
 
 constexpr std::array<Color, kEnemyWidth * kEnemyHeight> buildEnemySprite() {
@@ -128,7 +176,8 @@ constexpr std::array<Color, kEnemyWidth * kEnemyHeight> buildEnemySprite() {
   for (int32_t row = 0; row < kEnemyHeight; ++row) {
     for (int32_t col = 0; col < kEnemyWidth; ++col) {
       pixels[static_cast<size_t>(offset++)] =
-          spritePixel(kEnemyRows[row], col, kEnemyWidth, Color::ORANGE);
+          spritePixel2(kEnemyRows[row], col, kEnemyWidth, Color::ORANGE,
+                       Color::DARK_ORANGE);
     }
   }
   return pixels;
@@ -148,16 +197,14 @@ buildProjectileSprite() {
   return pixels;
 }
 
-// US-8: the enemy's return-fire shot reuses the player projectile's own
-// slim-bar silhouette (same shape, same aspect ratio -- both read as "a
-// shot" at a glance) but in Color::DARK_ORANGE, not BRIGHT_ORANGE -- the
-// one palette shade nothing else in this game uses. This is deliberate,
-// not just a visual nicety: every existing test (T1-T9) that scans for
-// BRIGHT_ORANGE to find "the player's own shot" would otherwise also match
-// an enemy shot sharing the screen, breaking assumptions built before this
-// story existed. Blit has no per-call colour override (it copies each
-// sprite's own baked-in Color), so this is its own small array, not a
-// tinted reuse of kProjectileSprite.
+// US-8/galactic-invasion-artwork AC-3.10: the enemy's return-fire shot
+// has its own segmented silhouette (kEnemyShotRows above), not the
+// player projectile's solid bar, in Color::ORANGE -- the enemy side's
+// own identity ink (AC-2.3), not the shipped game's original
+// DARK_ORANGE (1.594:1 contrast, below every floor for the one object
+// the player must react to, NFR-7). Blit has no per-call colour override
+// (it copies each sprite's own baked-in Color), so this is its own small
+// array either way, not a tinted reuse of kProjectileSprite.
 constexpr std::array<Color, kProjectileWidth * kProjectileHeight>
 buildEnemyShotSprite() {
   std::array<Color, kProjectileWidth * kProjectileHeight> pixels{};
@@ -165,15 +212,23 @@ buildEnemyShotSprite() {
   for (int32_t row = 0; row < kProjectileHeight; ++row) {
     for (int32_t col = 0; col < kProjectileWidth; ++col) {
       pixels[static_cast<size_t>(offset++)] =
-          spritePixel(kProjectileRows[row], col, kProjectileWidth,
-                      Color::DARK_ORANGE);
+          spritePixel(kEnemyShotRows[row], col, kProjectileWidth,
+                      Color::ORANGE);
     }
   }
   return pixels;
 }
 
+// Sourced from the offline generator (galactic-invasion-artwork T9), not
+// hand-typed rows: kPlayerGeneratedPixels lives in
+// galactic_invasion_generated_art.h's own detail namespace, distinctly
+// named to avoid a redefinition where both headers' `detail` coexist.
+// kPlayerWidth/kPlayerHeight above are untouched (A6) -- the generator
+// filled that exact, frozen box; it never chose it.
 inline constexpr std::array<Color, kPlayerWidth * kPlayerHeight>
-    kPlayerPixels = buildPlayerSprite();
+    kPlayerPixels = kPlayerGeneratedPixels;
+// Hand-authored (AC-3.11), not generated -- see kEnemyRows' own comment
+// above and the file-level comment for T13's reversal.
 inline constexpr std::array<Color, kEnemyWidth * kEnemyHeight> kEnemyPixels =
     buildEnemySprite();
 inline constexpr std::array<Color, kProjectileWidth * kProjectileHeight>

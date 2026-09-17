@@ -11,11 +11,13 @@
 #include "steamcore/round_result.h"
 
 // SteamCore's first playable game (galactic-invasion plan §1) -- a
-// Galaga/Space-Invaders homage composing nine already-shipped primitives
-// (GameLoop, GameSession, collision.h, Framebuffer/Sprite/blit/drawText,
-// drawTitleScreen) unmodified. Lives under games/, not include/steamcore/
-// (constitution §5's own layout for a game, distinct from the engine's
-// public surface).
+// Galaga/Space-Invaders homage composing eight already-shipped engine
+// primitives (GameLoop, GameSession, collision.h,
+// Framebuffer/Sprite/blit/drawText) unmodified, plus this game's own
+// logo screen (galactic-invasion-artwork US-1, A1) in place of the
+// engine's generic drawTitleScreen. Lives under games/, not
+// include/steamcore/ (constitution §5's own layout for a game, distinct
+// from the engine's public surface).
 //
 // Example (a caller driving a full round exactly like game_loop.h's own
 // doc-comment example -- this type needs nothing beyond GameLoop's
@@ -31,7 +33,8 @@
 //
 // Contract:
 //  - Drives GameSession (game_state.h) through all three of its states
-//    unchanged: READY draws the unmodified drawTitleScreen; a rising edge
+//    unchanged: READY draws this game's own logo screen
+//    (drawGalacticInvasionLogo, galactic_invasion_logo.h); a rising edge
 //    of `input.start` moves READY -> PLAYING and (on a fresh round only)
 //    resets every piece of round state via resetRound(); GAME_OVER draws
 //    the win or loss screen depending on the private Outcome recorded
