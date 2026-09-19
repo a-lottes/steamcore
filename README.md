@@ -2,6 +2,20 @@
 
 > **A Steampunk Arcade Console for an Alternate 1983**
 
+> **Built with [aSPARK](https://github.com/a-lottes/aSPARK)** — every feature in this repo went from idea to
+> release through the gated SPARK loop: Product Owner, Designer, Engineering Manager,
+> Reviewer, QA Tester and Release Manager, one gate at a time. The complete paper trail
+> lives in [`.spark/`](.spark/): 13 features, one folder each, plus the project's
+> [constitution](.spark/constitution.md). The console has no browser surface, so QA runs by a
+> declared substitute method (host unit tests, framebuffer dumps, serial transcripts) instead
+> of `/demo-day`'s usual real-browser pass — see constitution §8.
+>
+> **New here? Read one feature end to end:** [`highscore-system`](.spark/highscore-system/) (shipped as
+> `v0.8.0`) — [`spec.md`](.spark/highscore-system/spec.md) → [`plan.md`](.spark/highscore-system/plan.md)
+> → [`review.md`](.spark/highscore-system/review.md) (passed in round 2)
+> → [`qa.md`](.spark/highscore-system/qa.md) (passed, one hardware-gated AC honestly left `not capturable`)
+> → [`release.md`](.spark/highscore-system/release.md).
+
 BRASS-01 ist eine selbst entwickelte Mini-Retro-Konsole mit
 Steampunk-Ästhetik und bewusst einfacher Arcade-Grafik im Stil der
 frühen 1980er Jahre.
